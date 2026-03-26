@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { formatCurrency, formatDate } from '~/utils/formatters'
 
-definePageMeta({ layout: 'platform' })
+definePageMeta({ layout: 'platform', middleware: ['auth', 'role-platform'] })
 
 const { partners, getPartnerCustomers, getPartnerActiveModuleCount, getPartnerMonthlyRevenue, addPartner } = useMockData()
 
@@ -100,7 +100,7 @@ function submitAdd() {
         <div>
           <label class="label">Slug</label>
           <input v-model="addForm.slug" type="text" class="input font-mono text-sm" />
-          <p v-if="addForm.slug" class="mt-1 text-xs text-gray-400">{{ addForm.slug }}.keepon.nl</p>
+          <p v-if="addForm.slug" class="mt-1 text-xs text-gray-400">{{ addForm.slug }}.runon.nl</p>
         </div>
         <div>
           <label class="label">Support e-mail</label>
@@ -157,7 +157,7 @@ function submitAdd() {
                 {{ p.is_active ? 'Actief' : 'Inactief' }}
               </span>
             </div>
-            <p class="mt-0.5 text-sm text-gray-500">{{ p.slug }}.keepon.nl</p>
+            <p class="mt-0.5 text-sm text-gray-500">{{ p.slug }}.runon.nl</p>
             <p class="mt-0.5 text-xs text-gray-400">Sinds {{ formatDate(p.created_at) }}</p>
           </div>
           <AppIcon name="chevron-right" :size="16" class="mt-1 text-gray-300 transition-colors group-hover:text-gray-500" />

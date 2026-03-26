@@ -6,7 +6,7 @@ import type { Partner, Customer, Installation, ModuleDefinition, PartnerModuleCo
 import { generateAiResponse, generateAiSummary } from '~/utils/ai-service'
 
 // --- LocalStorage persistence for demo ---
-const STORAGE_KEY = 'keepon-demo-state'
+const STORAGE_KEY = 'runon-demo-state'
 
 function loadPersistedState(): Record<string, any> | null {
   if (typeof window === 'undefined') return null
@@ -139,7 +139,7 @@ Installatie: het energiesysteem (zonnepanelen, warmtepomp en/of laadpaal) waarop
 
 6. Monitoring en data
 
-6.1 {{bedrijfsnaam}} monitort de installatie via het KeepON-platform in samenwerking met gespecialiseerde monitoringpartners.
+6.1 {{bedrijfsnaam}} monitort de installatie via het RunON-platform in samenwerking met gespecialiseerde monitoringpartners.
 6.2 Klantgegevens worden verwerkt conform de AVG en zijn uitsluitend toegankelijk voor {{bedrijfsnaam}} en de klant zelf.
 6.3 Gegevens van klanten van {{bedrijfsnaam}} zijn nooit zichtbaar voor andere installateurs of derden.
 

@@ -2,7 +2,7 @@
 import { formatDate } from '~/utils/formatters'
 import type { Customer } from '~~/shared/types/database'
 
-definePageMeta({ layout: 'admin' })
+definePageMeta({ layout: 'admin', middleware: ['auth', 'role-partner'] })
 
 const { customers, getCustomerInstallations, getInstallationSubscriptions, subscriptions } = useMockData()
 

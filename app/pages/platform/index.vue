@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { formatCurrency } from '~/utils/formatters'
 
-definePageMeta({ layout: 'platform' })
+definePageMeta({ layout: 'platform', middleware: ['auth', 'role-platform'] })
 
 const { partners, getPlatformStats, getPartnerCustomers, getPartnerActiveModuleCount, getPartnerMonthlyRevenue } = useMockData()
 
@@ -93,7 +93,7 @@ const recentActivity = [
             <img :src="p.logo_url!" :alt="p.name" class="h-10 w-10 rounded-xl" />
             <div class="min-w-0 flex-1">
               <p class="font-medium text-gray-900">{{ p.name }}</p>
-              <p class="text-xs text-gray-500">{{ p.slug }}.keepon.nl</p>
+              <p class="text-xs text-gray-500">{{ p.slug }}.runon.nl</p>
             </div>
             <div class="hidden gap-6 text-right sm:flex">
               <div>

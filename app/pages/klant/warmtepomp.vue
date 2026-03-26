@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { getModuleTheme } from '~/utils/module-theme'
 
-definePageMeta({ layout: 'customer' })
+definePageMeta({ layout: 'customer', middleware: ['auth'] })
 
 const { heatPumpData, updateHeatPumpMode, partner } = useMockData()
 const theme = getModuleTheme('heat_pump')

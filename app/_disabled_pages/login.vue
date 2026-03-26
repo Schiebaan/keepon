@@ -41,7 +41,7 @@ async function handleLogin() {
             class="mx-auto mb-3 h-12 w-auto"
           >
           <h1 class="text-xl font-semibold text-gray-900">
-            {{ tenant?.name || 'KeepON' }}
+            {{ tenant?.name || 'RunON' }}
           </h1>
           <p class="mt-1 text-sm text-gray-500">
             Log in op je portaal

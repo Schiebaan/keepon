@@ -11,7 +11,7 @@ export function useAuth() {
     if (!userRole.value) userRole.value = 'platform_admin'
 
     return {
-      user: ref({ id: 'demo-user', email: 'demo@keepon.nl' }),
+      user: ref({ id: 'demo-user', email: 'demo@runon.nl' }),
       userRole,
       isLoading,
       resolveRole: async () => userRole.value ?? 'platform_admin',

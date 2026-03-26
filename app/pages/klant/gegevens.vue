@@ -1,5 +1,5 @@
 <script setup lang="ts">
-definePageMeta({ layout: 'customer' })
+definePageMeta({ layout: 'customer', middleware: ['auth'] })
 
 const { currentCustomer, currentCustomerInstallations, partner, updateCurrentCustomer } = useMockData()
 const installation = currentCustomerInstallations[0]

@@ -6,8 +6,17 @@ export default defineNuxtConfig({
   srcDir: 'app/',
 
   modules: [
-    // '@nuxtjs/supabase', // Uncomment when Supabase is configured
+    // Supabase alleen laden als we NIET in demo mode zijn
+    ...(process.env.DEMO_MODE !== 'true' ? ['@nuxtjs/supabase'] : []),
   ],
+
+  supabase: {
+    redirectOptions: {
+      login: '/login',
+      callback: '/auth/callback',
+      exclude: ['/', '/login', '/welkom/*', '/voorwaarden/*'],
+    },
+  },
 
   css: ['~/assets/css/main.css'],
 
@@ -25,13 +34,13 @@ export default defineNuxtConfig({
       baseDomain: 'localhost:3000',
       supabaseUrl: '',
       supabaseKey: '',
-      demoMode: true, // Set to false when Supabase is connected
+      demoMode: process.env.DEMO_MODE === 'true',
     },
   },
 
   app: {
     head: {
-      title: 'KeepON',
+      title: 'RunON',
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },

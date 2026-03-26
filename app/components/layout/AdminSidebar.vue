@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const { partner } = useMockData()
+const { signOut } = useAuth()
 const route = useRoute()
 
 const navItems = [
@@ -59,13 +60,13 @@ function isActive(to: string) {
 
     <!-- Bottom section -->
     <div class="border-t border-gray-100 p-4">
-      <NuxtLink
-        to="/"
-        class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700"
+      <button
+        class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700"
+        @click="signOut()"
       >
         <AppIcon name="logout" :size="16" />
         <span>Uitloggen</span>
-      </NuxtLink>
+      </button>
     </div>
   </aside>
 </template>

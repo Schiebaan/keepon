@@ -89,7 +89,7 @@ async function save() {
           <div>
             <label class="label">Slug</label>
             <input v-model="form.slug" type="text" class="input">
-            <p class="mt-1 text-xs text-gray-400">{{ form.slug }}.keepon.nl</p>
+            <p class="mt-1 text-xs text-gray-400">{{ form.slug }}.runon.nl</p>
           </div>
           <div>
             <label class="label">Support e-mail</label>

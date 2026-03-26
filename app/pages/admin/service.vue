@@ -3,7 +3,7 @@ import { formatDate } from '~/utils/formatters'
 import { getModuleTheme } from '~/utils/module-theme'
 import type { MockConversation } from '~/composables/useMockData'
 
-definePageMeta({ layout: 'admin' })
+definePageMeta({ layout: 'admin', middleware: ['auth', 'role-partner'] })
 
 const {
   conversations,

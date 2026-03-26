@@ -4,6 +4,7 @@ const props = defineProps<{
 }>()
 
 const { partner, subscriptions } = useMockData()
+const { signOut } = useAuth()
 
 // Customer nav: check active module types
 const hasSolar = computed(() =>
@@ -175,6 +176,14 @@ watch(() => route.fullPath, () => {
                 <AppIcon name="document" :size="15" class="text-gray-400" />
                 Contracten
               </NuxtLink>
+              <div class="my-1 border-t border-gray-100" />
+              <button
+                class="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                @click="closeAccountMenu(); signOut()"
+              >
+                <AppIcon name="logout" :size="15" class="text-gray-400" />
+                Uitloggen
+              </button>
             </div>
           </Transition>
         </div>
@@ -269,6 +278,16 @@ watch(() => route.fullPath, () => {
             <AppIcon name="document" :size="18" />
             Contracten
           </NuxtLink>
+
+          <div class="my-2 border-t border-gray-100" />
+
+          <button
+            class="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-100"
+            @click="signOut()"
+          >
+            <AppIcon name="logout" :size="18" />
+            Uitloggen
+          </button>
         </div>
       </nav>
     </Transition>

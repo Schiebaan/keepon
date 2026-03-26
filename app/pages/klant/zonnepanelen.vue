@@ -2,7 +2,7 @@
 import { formatCurrency } from '~/utils/formatters'
 import { getModuleTheme } from '~/utils/module-theme'
 
-definePageMeta({ layout: 'customer' })
+definePageMeta({ layout: 'customer', middleware: ['auth'] })
 
 const { solarData, partner } = useMockData()
 const theme = getModuleTheme('solar')

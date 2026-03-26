@@ -2,7 +2,7 @@
 import { formatCurrency, formatDate } from '~/utils/formatters'
 import { getModuleTheme } from '~/utils/module-theme'
 
-definePageMeta({ layout: 'customer' })
+definePageMeta({ layout: 'customer', middleware: ['auth'] })
 
 const { currentCustomer, currentCustomerInstallations, subscriptions, cancelSubscription, addSubscription, partner } = useMockData()
 

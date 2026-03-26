@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { getModuleTheme } from '~/utils/module-theme'
 
-definePageMeta({ layout: 'admin' })
+definePageMeta({ layout: 'admin', middleware: ['auth', 'role-partner'] })
 
 const { partner } = useMockData()
 
@@ -170,7 +170,7 @@ async function handleLogoChange(event: Event) {
               <label class="label">Portaal URL</label>
               <div class="flex items-center gap-2">
                 <input type="text" v-model="partner.slug" class="input flex-1" />
-                <span class="text-sm text-gray-400 whitespace-nowrap">.keepon.nl</span>
+                <span class="text-sm text-gray-400 whitespace-nowrap">.runon.nl</span>
               </div>
             </div>
             <div class="grid grid-cols-2 gap-3">

@@ -8,7 +8,7 @@ export function useBranding() {
         --brand-secondary: ${tenant.value.secondary_color};
       }`
     }] : [],
-    title: tenant.value ? `${tenant.value.name} - Mijn Portaal` : 'KeepON',
+    title: tenant.value ? `${tenant.value.name} - Mijn Portaal` : 'RunON',
   }))
 
   return { tenant }

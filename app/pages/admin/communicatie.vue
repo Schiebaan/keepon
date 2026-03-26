@@ -2,7 +2,7 @@
 import { formatDate } from '~/utils/formatters'
 import type { MockNotification } from '~/composables/useMockData'
 
-definePageMeta({ layout: 'admin' })
+definePageMeta({ layout: 'admin', middleware: ['auth', 'role-partner'] })
 
 const { getNotifications } = useMockData()
 

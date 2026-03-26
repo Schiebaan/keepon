@@ -2,7 +2,7 @@
 import { formatCurrency } from '~/utils/formatters'
 import { getModuleTheme } from '~/utils/module-theme'
 
-definePageMeta({ layout: 'admin' })
+definePageMeta({ layout: 'admin', middleware: ['auth', 'role-partner'] })
 
 const { partnerModuleConfigs, subscriptions } = useMockData()
 

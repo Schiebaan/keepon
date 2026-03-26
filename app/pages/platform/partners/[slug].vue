@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { formatCurrency, formatDate } from '~/utils/formatters'
 
-definePageMeta({ layout: 'platform' })
+definePageMeta({ layout: 'platform', middleware: ['auth', 'role-platform'] })
 
 const route = useRoute()
 const { partners, getPartnerCustomers, getPartnerActiveModuleCount, getPartnerMonthlyRevenue, getPartnerPayments, allSubscriptions, updatePartner, deletePartner } = useMockData()
@@ -116,7 +116,7 @@ const paymentStats = computed(() => {
                 {{ partner.is_active ? 'Actief' : 'Inactief' }}
               </span>
             </div>
-            <p class="text-sm text-gray-500">{{ partner.slug }}.keepon.nl &middot; Sinds {{ formatDate(partner.created_at) }}</p>
+            <p class="text-sm text-gray-500">{{ partner.slug }}.runon.nl &middot; Sinds {{ formatDate(partner.created_at) }}</p>
           </div>
           <div class="flex items-center gap-2">
             <div class="h-6 w-6 rounded-full ring-2 ring-white" :style="{ backgroundColor: partner.primary_color }" />

@@ -3,7 +3,7 @@ import { formatCurrency } from '~/utils/formatters'
 import { getModuleTheme } from '~/utils/module-theme'
 import { getModuleBenefits } from '~/utils/module-benefits'
 
-definePageMeta({ layout: 'customer' })
+definePageMeta({ layout: 'customer', middleware: ['auth'] })
 
 const {
   currentCustomer,

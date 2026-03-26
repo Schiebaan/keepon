@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { formatCurrency, formatDate } from '~/utils/formatters'
 
-definePageMeta({ layout: 'customer' })
+definePageMeta({ layout: 'customer', middleware: ['auth'] })
 
 const { currentCustomer, getCustomerInvoices } = useMockData()
 

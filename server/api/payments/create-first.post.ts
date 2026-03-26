@@ -48,7 +48,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Determine webhook URL
-  const host = getHeader(event, 'host') || `${tenant.slug}.keepon.nl`
+  const host = getHeader(event, 'host') || `${tenant.slug}.runon.nl`
   const protocol = process.dev ? 'http' : 'https'
   const webhookUrl = `${protocol}://${host}/api/webhooks/mollie`
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { getModuleTheme } from '~/utils/module-theme'
 
-definePageMeta({ layout: 'customer' })
+definePageMeta({ layout: 'customer', middleware: ['auth'] })
 
 const { conversations, startConversation, sendMessage, escalateConversation, partner } = useMockData()
 
