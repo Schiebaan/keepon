@@ -18,7 +18,7 @@ function isActive(to: string) {
     <header class="border-b border-gray-200 bg-gray-900">
       <div class="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
         <div class="flex items-center gap-8">
-          <NuxtLink to="/platform" class="text-lg font-semibold text-white">RunON Platform</NuxtLink>
+          <NuxtLink to="/platform" class="text-lg font-semibold text-white">UPsol Platform</NuxtLink>
           <nav class="flex items-center gap-1">
             <NuxtLink
               v-for="item in navItems"

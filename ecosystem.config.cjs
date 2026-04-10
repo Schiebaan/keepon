@@ -1,4 +1,25 @@
 // PM2 configuratie voor RunON productie
+const { readFileSync } = require('fs')
+const { resolve } = require('path')
+
+// Load .env file
+const envFile = resolve(__dirname, '.env')
+const envVars = {}
+try {
+  const lines = readFileSync(envFile, 'utf-8').split('\n')
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const eqIndex = trimmed.indexOf('=')
+    if (eqIndex === -1) continue
+    const key = trimmed.slice(0, eqIndex).trim()
+    const value = trimmed.slice(eqIndex + 1).trim()
+    envVars[key] = value
+  }
+} catch (e) {
+  console.error('Warning: could not read .env file:', e.message)
+}
+
 module.exports = {
   apps: [{
     name: 'runon',
@@ -9,6 +30,7 @@ module.exports = {
       NODE_ENV: 'production',
       PORT: 3000,
       NITRO_HOST: '127.0.0.1',
+      ...envVars,
     },
     // Automatisch herstarten bij crashes
     max_restarts: 10,

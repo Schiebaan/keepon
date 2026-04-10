@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { partner } = useMockData()
+const { partner } = usePartner()
 
 // Inject brand colors as CSS custom properties + Inter font
 useHead({

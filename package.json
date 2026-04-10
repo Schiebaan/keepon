@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "nuxt dev --port 3000",
     "dev:win": "set NUXT_TELEMETRY_DISABLED=1 && nuxt dev --port 3000",
-    "build": "nuxt build",
+    "build": "nuxt build && ln -sf $(pwd)/.output/public $(pwd)/.output/server/chunks/public",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "node scripts/patch-nuxt-cli.mjs && nuxt prepare"
@@ -15,7 +15,9 @@
     "@mollie/api-client": "^4.4.0",
     "@nuxtjs/supabase": "^2.0.3",
     "@supabase/supabase-js": "^2.95.2",
-    "nuxt": "3.15.4"
+    "nuxt": "3.15.4",
+    "pg": "^8.20.0",
+    "resend": "^6.9.4"
   },
   "devDependencies": {
     "@types/node": "^25.2.1",

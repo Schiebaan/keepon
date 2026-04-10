@@ -3,8 +3,9 @@
 definePageMeta({ layout: false })
 
 const config = useRuntimeConfig()
-const { partner } = useMockData()
 const { user, userRole, resolveRole } = useAuth()
+// Only load mock data in demo mode (prevents SSR crash from localStorage access)
+const partner = config.public.demoMode ? useMockData().partner : null
 
 // In production mode, redirect based on auth state
 if (!config.public.demoMode) {
@@ -14,10 +15,14 @@ if (!config.public.demoMode) {
       return
     }
     const role = await resolveRole()
-    if (role === 'platform_admin') navigateTo('/platform')
-    else if (role === 'partner_admin') navigateTo('/admin')
-    else if (role === 'customer') navigateTo('/klant')
-    else navigateTo('/login')
+    if (role === 'platform_admin') navigateTo('/platform', { replace: true })
+    else if (role === 'partner_admin') navigateTo('/admin', { replace: true })
+    else if (role === 'customer') navigateTo('/klant', { replace: true })
+    else {
+      // Sign out to clear stale session, then go to login
+      const { signOut } = useAuth()
+      await signOut()
+    }
   })
 }
 </script>

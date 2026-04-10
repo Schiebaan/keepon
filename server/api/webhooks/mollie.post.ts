@@ -43,7 +43,7 @@ export default defineEventHandler(async (event) => {
     if (payment.sequenceType === 'first') {
       const interval = sub.billing_interval === 'monthly' ? '1 month' : '12 months'
 
-      const host = getHeader(event, 'host') || `${tenant.slug}.runon.nl`
+      const host = getHeader(event, 'host') || `${tenant.slug}.upsol.nl`
       const protocol = process.dev ? 'http' : 'https'
 
       try {

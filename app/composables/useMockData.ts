@@ -2,7 +2,7 @@
 // Verwijder dit bestand zodra Supabase is aangesloten
 
 import { reactive } from 'vue'
-import type { Partner, Customer, Installation, ModuleDefinition, PartnerModuleConfig, Subscription } from '~~/shared/types/database'
+import type { Partner, Customer, Installation, ModuleDefinition, PartnerModuleConfig, Subscription, CustomerProduct, CustomerDocument, SmartMeter, SmartMeterReading } from '~~/shared/types/database'
 import { generateAiResponse, generateAiSummary } from '~/utils/ai-service'
 
 // --- LocalStorage persistence for demo ---
@@ -17,11 +17,25 @@ function loadPersistedState(): Record<string, any> | null {
 }
 
 function applyPersistedState(saved: Record<string, any>) {
+  // Load separate logos if they exist
+  let logos: Record<string, string> = {}
+  try {
+    const rawLogos = localStorage.getItem(STORAGE_KEY + '-logos')
+    if (rawLogos) logos = JSON.parse(rawLogos)
+  } catch {}
+
   // Restore partner overrides
   if (saved.partners) {
     saved.partners.forEach((sp: any) => {
       const p = PARTNERS.find(x => x.id === sp.id)
-      if (p) Object.assign(p, sp)
+      if (p) {
+        // Resolve logo references back to actual data
+        if (sp.logo_url && sp.logo_url.startsWith('__logo_ref:')) {
+          const refId = sp.logo_url.replace('__logo_ref:', '')
+          sp.logo_url = logos[refId] || p.logo_url
+        }
+        Object.assign(p, sp)
+      }
     })
   }
   // Restore module config overrides (prices, enabled)
@@ -42,6 +56,17 @@ function applyPersistedState(saved: Record<string, any>) {
     saved.customers.forEach((sc: any) => {
       const c = ALL_CUSTOMERS.find(x => x.id === sc.id)
       if (c) Object.assign(c, sc)
+    })
+  }
+  // Restore integration credentials
+  if (saved.integrationCredentials) {
+    INTEGRATION_CREDENTIALS.splice(0, INTEGRATION_CREDENTIALS.length, ...saved.integrationCredentials)
+  }
+  // Restore email templates
+  if (saved.emailTemplates) {
+    saved.emailTemplates.forEach((st: any) => {
+      const t = EMAIL_TEMPLATES.find(x => x.type === st.type)
+      if (t) Object.assign(t, st)
     })
   }
 }
@@ -65,26 +90,58 @@ function persistCurrentState() {
         id: c.id, full_name: c.full_name, email: c.email, phone: c.phone,
         street: c.street, house_number: c.house_number, postal_code: c.postal_code, city: c.city,
       })),
+      integrationCredentials: INTEGRATION_CREDENTIALS.map(c => ({ ...c })),
+      emailTemplates: EMAIL_TEMPLATES.map(t => ({ ...t })),
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  } catch {}
+
+    // Try to save. If logo data URLs make it too large, save logos separately
+    const json = JSON.stringify(state)
+    try {
+      localStorage.setItem(STORAGE_KEY, json)
+    } catch (quotaErr) {
+      // Likely QuotaExceededError from large base64 logos — save logos in separate key and strip from main state
+      const logos: Record<string, string> = {}
+      state.partners.forEach(p => {
+        if (p.logo_url && p.logo_url.length > 500) {
+          logos[p.id] = p.logo_url
+          p.logo_url = `__logo_ref:${p.id}`
+        }
+      })
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+      localStorage.setItem(STORAGE_KEY + '-logos', JSON.stringify(logos))
+    }
+  } catch (e) {
+    console.warn('[mock] Failed to persist state:', e)
+  }
 }
 
-// Auto-persist: set up on first call
+// Auto-persist: set up on first call, but AFTER hydration completes
 let _persistInitialized = false
 function initPersistence() {
   if (_persistInitialized || typeof window === 'undefined') return
   _persistInitialized = true
 
-  // Restore on first load
-  const saved = loadPersistedState()
-  if (saved) applyPersistedState(saved)
+  // Wait for hydration to complete before restoring state.
+  // During SSR, PARTNERS is initialized with defaults. If we restore localStorage
+  // during setup, Vue's hydration can overwrite our changes with the server defaults.
+  // Using requestAnimationFrame ensures we run after hydration is done.
+  const restore = () => {
+    const saved = loadPersistedState()
+    if (saved) applyPersistedState(saved)
 
-  // Auto-save every 2 seconds (simple & reliable for demo)
-  setInterval(persistCurrentState, 2000)
+    // Auto-save every 2 seconds (simple & reliable for demo)
+    setInterval(persistCurrentState, 2000)
 
-  // Also save on page unload
-  window.addEventListener('beforeunload', persistCurrentState)
+    // Also save on page unload
+    window.addEventListener('beforeunload', persistCurrentState)
+  }
+
+  // nextTick + rAF ensures we're past hydration
+  if (typeof requestAnimationFrame !== 'undefined') {
+    requestAnimationFrame(() => requestAnimationFrame(restore))
+  } else {
+    setTimeout(restore, 100)
+  }
 }
 
 // --- Partners (reactive for CRUD) ---
@@ -139,7 +196,7 @@ Installatie: het energiesysteem (zonnepanelen, warmtepomp en/of laadpaal) waarop
 
 6. Monitoring en data
 
-6.1 {{bedrijfsnaam}} monitort de installatie via het RunON-platform in samenwerking met gespecialiseerde monitoringpartners.
+6.1 {{bedrijfsnaam}} monitort de installatie via het UPsol-platform in samenwerking met gespecialiseerde monitoringpartners.
 6.2 Klantgegevens worden verwerkt conform de AVG en zijn uitsluitend toegankelijk voor {{bedrijfsnaam}} en de klant zelf.
 6.3 Gegevens van klanten van {{bedrijfsnaam}} zijn nooit zichtbaar voor andere installateurs of derden.
 
@@ -833,6 +890,129 @@ const SYSTEM_STATUS: MockSystemStatus = reactive({
   lastChecked: new Date().toISOString(),
 })
 
+// --- Email Templates (per partner, editable) ---
+interface EmailTemplate {
+  id: string
+  type: string
+  label: string
+  description: string
+  enabled: boolean
+  subject: string
+  heading: string
+  body: string
+  buttonText: string
+}
+
+const DEFAULT_EMAIL_TEMPLATES: Omit<EmailTemplate, 'id'>[] = [
+  { type: 'welkomstmail', label: 'Welkomstmail', description: 'Wordt verstuurd wanneer een nieuwe klant wordt aangemaakt.', enabled: true, subject: 'Welkom bij {{bedrijfsnaam}} — activeer je account', heading: 'Welkom, {{voornaam}}!', body: '{{bedrijfsnaam}} heeft een account voor je aangemaakt. Hiermee kun je de status van je installatie volgen en beheren.', buttonText: 'Account activeren' },
+  { type: 'activatie_bevestiging', label: 'Activatiebevestiging', description: 'Wordt verstuurd wanneer een klant zijn account activeert.', enabled: true, subject: 'Je account bij {{bedrijfsnaam}} is actief', heading: 'Je account is actief!', body: 'Hallo {{voornaam}}, je account bij {{bedrijfsnaam}} is succesvol geactiveerd. Je kunt nu inloggen op je persoonlijke dashboard.', buttonText: 'Naar mijn dashboard' },
+  { type: 'wachtwoord_reset', label: 'Wachtwoord herstellen', description: 'Wordt verstuurd wanneer een klant een nieuw wachtwoord aanvraagt.', enabled: true, subject: 'Wachtwoord herstellen', heading: 'Wachtwoord herstellen', body: 'Hallo {{voornaam}}, we hebben een verzoek ontvangen om je wachtwoord te wijzigen. Klik op de knop hieronder om een nieuw wachtwoord in te stellen.', buttonText: 'Nieuw wachtwoord instellen' },
+  { type: 'factuur', label: 'Factuur per e-mail', description: 'Wordt verstuurd bij het aanmaken van een nieuwe factuur.', enabled: true, subject: 'Nieuwe factuur van {{bedrijfsnaam}}', heading: 'Nieuwe factuur', body: 'Hallo {{voornaam}}, er staat een nieuwe factuur voor je klaar. Je kunt deze bekijken en downloaden via je dashboard.', buttonText: 'Factuur bekijken' },
+  { type: 'contract_bevestiging', label: 'Contractbevestiging', description: 'Wordt verstuurd bij het afsluiten van een nieuw servicecontract.', enabled: true, subject: 'Bevestiging servicecontract {{bedrijfsnaam}}', heading: 'Contractbevestiging', body: 'Hallo {{voornaam}}, je servicecontract bij {{bedrijfsnaam}} is succesvol afgesloten. Hieronder vind je de details.', buttonText: 'Contract bekijken' },
+  { type: 'opzegging_bevestiging', label: 'Opzeggingsbevestiging', description: 'Wordt verstuurd wanneer een klant zijn contract opzegt.', enabled: true, subject: 'Bevestiging opzegging {{bedrijfsnaam}}', heading: 'Opzegging bevestigd', body: 'Hallo {{voornaam}}, we bevestigen de opzegging van je servicecontract. Je contract loopt door tot het einde van de lopende periode.', buttonText: 'Naar mijn account' },
+]
+
+function createEmailTemplates(): EmailTemplate[] {
+  return DEFAULT_EMAIL_TEMPLATES.map((t, i) => ({ ...t, id: `tmpl-${i + 1}` }))
+}
+
+const EMAIL_TEMPLATES: EmailTemplate[] = reactive(createEmailTemplates())
+
+// --- Integration Credentials (per partner) ---
+interface StoredIntegrationCredentials {
+  id: string
+  partner_id: string
+  type: string // sundata, weheat, easee, mollie, etc.
+  credentials: Record<string, string>
+  is_connected: boolean
+  details: Record<string, any> | null
+  last_tested_at: string | null
+}
+
+const INTEGRATION_CREDENTIALS: StoredIntegrationCredentials[] = reactive([])
+
+// --- Smart Meters ---
+const ALL_SMART_METERS: SmartMeter[] = reactive([
+  { id: 'meter-1', customer_id: 'cust-1', partner_id: 'partner-1', postcode: '1234 AB', meter_id: '482156', status: 'active', error_message: null, linked_at: '2025-03-16T10:00:00Z', created_at: '2025-03-15T10:00:00Z', updated_at: '2025-03-16T10:00:00Z' },
+  { id: 'meter-2', customer_id: 'cust-2', partner_id: 'partner-1', postcode: '5678 CD', meter_id: '339871', status: 'active', error_message: null, linked_at: '2025-04-21T14:00:00Z', created_at: '2025-04-20T14:00:00Z', updated_at: '2025-04-21T14:00:00Z' },
+])
+
+// Generate mock smart meter readings (last 7 days, hourly)
+function generateMockReadings(): SmartMeterReading[] {
+  const readings: SmartMeterReading[] = []
+  const now = new Date()
+  for (let d = 6; d >= 0; d--) {
+    for (let h = 0; h < 24; h++) {
+      const date = new Date(now)
+      date.setDate(date.getDate() - d)
+      date.setHours(h, 0, 0, 0)
+      if (date > now) continue
+
+      // Realistic consumption pattern: low at night, peaks morning/evening
+      const hourFactor = h >= 7 && h <= 9 ? 1.8 : h >= 17 && h <= 21 ? 2.2 : h >= 0 && h <= 5 ? 0.4 : 1.0
+      const baseConsumption = 400 + Math.random() * 200
+      const consumption = Math.round(baseConsumption * hourFactor)
+
+      // Solar production: bell curve during daylight
+      let production = 0
+      if (h >= 7 && h <= 20) {
+        const solarPeak = 12
+        const spread = 4
+        const factor = Math.exp(-Math.pow(h - solarPeak, 2) / (2 * spread * spread))
+        production = Math.round(factor * (3000 + Math.random() * 1500))
+      }
+
+      // Gas: more in winter months, primarily morning/evening
+      const gasBase = 0.05 + Math.random() * 0.03
+      const gasFactor = (h >= 6 && h <= 8) || (h >= 18 && h <= 22) ? 2.5 : 0.5
+      const gas = Math.round(gasBase * gasFactor * 100) / 100
+
+      readings.push({
+        timestamp: date.toISOString(),
+        consumption_wh: consumption,
+        production_wh: production,
+        gas_m3: gas,
+      })
+    }
+  }
+  return readings
+}
+
+const MOCK_METER_READINGS = generateMockReadings()
+
+// --- Customer Products (Dossier) ---
+const ALL_CUSTOMER_PRODUCTS: CustomerProduct[] = reactive([
+  // Jan de Vries (cust-1) - zonnepanelen + warmtepomp
+  { id: 'prod-1', customer_id: 'cust-1', partner_id: 'partner-1', name: 'Longi Hi-MO 6 480Wp', brand: 'Longi', model: 'Hi-MO 6 LR5-66HTH-480M', category: 'solar_panel', serial_number: 'LG480-2024-00142', installation_date: '2025-03-10', notes: '16 panelen, zuidwest-oriëntatie', created_at: '2025-03-15T10:00:00Z', updated_at: '2025-03-15T10:00:00Z' },
+  { id: 'prod-2', customer_id: 'cust-1', partner_id: 'partner-1', name: 'Solis S6-GR1P5K', brand: 'Solis', model: 'S6-GR1P5K', category: 'inverter', serial_number: 'SOL-5K-2024-08821', installation_date: '2025-03-10', notes: '5kW 1-fase omvormer', created_at: '2025-03-15T10:00:00Z', updated_at: '2025-03-15T10:00:00Z' },
+  { id: 'prod-3', customer_id: 'cust-1', partner_id: 'partner-1', name: 'Weheat Blackbird', brand: 'Weheat', model: 'Blackbird 8kW', category: 'heat_pump', serial_number: 'WH-BB8-2025-0034', installation_date: '2025-06-20', notes: 'Lucht-water, COP 5.2', created_at: '2025-06-20T10:00:00Z', updated_at: '2025-06-20T10:00:00Z' },
+  // Lisa Bakker (cust-2) - zonnepanelen
+  { id: 'prod-4', customer_id: 'cust-2', partner_id: 'partner-1', name: 'JA Solar JAM72S30-545', brand: 'JA Solar', model: 'JAM72S30-545/MR', category: 'solar_panel', serial_number: null, installation_date: '2025-04-15', notes: '12 panelen, plat dak oost-west', created_at: '2025-04-20T14:00:00Z', updated_at: '2025-04-20T14:00:00Z' },
+  { id: 'prod-5', customer_id: 'cust-2', partner_id: 'partner-1', name: 'Huawei SUN2000-5KTL-L1', brand: 'Huawei', model: 'SUN2000-5KTL-L1', category: 'inverter', serial_number: 'HW-5KTL-2025-11204', installation_date: '2025-04-15', notes: '5kW hybride omvormer', created_at: '2025-04-20T14:00:00Z', updated_at: '2025-04-20T14:00:00Z' },
+  { id: 'prod-6', customer_id: 'cust-2', partner_id: 'partner-1', name: 'Huawei LUNA2000-10-S0', brand: 'Huawei', model: 'LUNA2000-10-S0', category: 'battery', serial_number: 'HW-LN10-2025-0087', installation_date: '2025-04-15', notes: '10kWh thuisbatterij', created_at: '2025-04-20T14:00:00Z', updated_at: '2025-04-20T14:00:00Z' },
+  // Piet Janssen (cust-3) - laadpaal
+  { id: 'prod-7', customer_id: 'cust-3', partner_id: 'partner-1', name: 'Easee Home', brand: 'Easee', model: 'Home 22kW', category: 'ev_charger', serial_number: 'EASEE-H-2025-44210', installation_date: '2025-05-08', notes: '3-fase, 22kW, wit', created_at: '2025-05-10T09:00:00Z', updated_at: '2025-05-10T09:00:00Z' },
+  // Maria van Dijk (cust-4) - warmtepomp
+  { id: 'prod-8', customer_id: 'cust-4', partner_id: 'partner-1', name: 'Weheat Hummingbird', brand: 'Weheat', model: 'Hummingbird 4kW', category: 'heat_pump', serial_number: 'WH-HB4-2025-0112', installation_date: '2025-05-25', notes: 'Lucht-water, compact model', created_at: '2025-06-01T11:00:00Z', updated_at: '2025-06-01T11:00:00Z' },
+])
+
+// --- Customer Documents (Dossier) ---
+const ALL_CUSTOMER_DOCUMENTS: CustomerDocument[] = reactive([
+  // Jan de Vries (cust-1)
+  { id: 'doc-1', customer_id: 'cust-1', partner_id: 'partner-1', name: 'Factuur zonnepanelen installatie', category: 'factuur', file_path: 'customer-documents/partner-1/cust-1/factuur-2025-001.pdf', file_size_bytes: 245000, mime_type: 'application/pdf', notes: null, uploaded_at: '2025-03-15T10:00:00Z', created_at: '2025-03-15T10:00:00Z' },
+  { id: 'doc-2', customer_id: 'cust-1', partner_id: 'partner-1', name: 'Opleverdocument PV-installatie', category: 'opleverdocument', file_path: 'customer-documents/partner-1/cust-1/oplevering-pv-2025.pdf', file_size_bytes: 1890000, mime_type: 'application/pdf', notes: 'Incl. foto\'s en meetrapporten', uploaded_at: '2025-03-16T14:00:00Z', created_at: '2025-03-16T14:00:00Z' },
+  { id: 'doc-3', customer_id: 'cust-1', partner_id: 'partner-1', name: 'Datasheet Longi Hi-MO 6', category: 'datasheet', file_path: 'customer-documents/partner-1/cust-1/datasheet-longi-himo6.pdf', file_size_bytes: 520000, mime_type: 'application/pdf', notes: null, uploaded_at: '2025-03-15T10:00:00Z', created_at: '2025-03-15T10:00:00Z' },
+  { id: 'doc-4', customer_id: 'cust-1', partner_id: 'partner-1', name: 'Garantiebewijs Solis omvormer', category: 'garantiebewijs', file_path: 'customer-documents/partner-1/cust-1/garantie-solis.pdf', file_size_bytes: 180000, mime_type: 'application/pdf', notes: '10 jaar fabrieksgarantie', uploaded_at: '2025-03-15T10:00:00Z', created_at: '2025-03-15T10:00:00Z' },
+  { id: 'doc-5', customer_id: 'cust-1', partner_id: 'partner-1', name: 'Factuur warmtepomp installatie', category: 'factuur', file_path: 'customer-documents/partner-1/cust-1/factuur-2025-042.pdf', file_size_bytes: 312000, mime_type: 'application/pdf', notes: null, uploaded_at: '2025-06-20T10:00:00Z', created_at: '2025-06-20T10:00:00Z' },
+  // Lisa Bakker (cust-2)
+  { id: 'doc-6', customer_id: 'cust-2', partner_id: 'partner-1', name: 'Offerte zonnepanelen + batterij', category: 'offerte', file_path: 'customer-documents/partner-1/cust-2/offerte-2025-018.pdf', file_size_bytes: 420000, mime_type: 'application/pdf', notes: 'Getekend op 2025-04-01', uploaded_at: '2025-03-25T10:00:00Z', created_at: '2025-03-25T10:00:00Z' },
+  { id: 'doc-7', customer_id: 'cust-2', partner_id: 'partner-1', name: 'Factuur installatie', category: 'factuur', file_path: 'customer-documents/partner-1/cust-2/factuur-2025-019.pdf', file_size_bytes: 275000, mime_type: 'application/pdf', notes: null, uploaded_at: '2025-04-20T14:00:00Z', created_at: '2025-04-20T14:00:00Z' },
+  { id: 'doc-8', customer_id: 'cust-2', partner_id: 'partner-1', name: 'Opleverdocument', category: 'opleverdocument', file_path: 'customer-documents/partner-1/cust-2/oplevering-2025.pdf', file_size_bytes: 2100000, mime_type: 'application/pdf', notes: null, uploaded_at: '2025-04-21T09:00:00Z', created_at: '2025-04-21T09:00:00Z' },
+  // Piet Janssen (cust-3)
+  { id: 'doc-9', customer_id: 'cust-3', partner_id: 'partner-1', name: 'Factuur Easee Home', category: 'factuur', file_path: 'customer-documents/partner-1/cust-3/factuur-2025-027.pdf', file_size_bytes: 198000, mime_type: 'application/pdf', notes: null, uploaded_at: '2025-05-10T09:00:00Z', created_at: '2025-05-10T09:00:00Z' },
+  { id: 'doc-10', customer_id: 'cust-3', partner_id: 'partner-1', name: 'Datasheet Easee Home', category: 'datasheet', file_path: 'customer-documents/partner-1/cust-3/datasheet-easee-home.pdf', file_size_bytes: 640000, mime_type: 'application/pdf', notes: null, uploaded_at: '2025-05-10T09:00:00Z', created_at: '2025-05-10T09:00:00Z' },
+])
+
 export function useMockData() {
   // Initialize persistence on first call (client-side only)
   if (typeof window !== 'undefined') initPersistence()
@@ -1393,6 +1573,155 @@ export function useMockData() {
       })
 
       return true
+    },
+
+    // --- Email Templates ---
+    emailTemplates: EMAIL_TEMPLATES,
+    getEmailTemplate(type: string) {
+      return EMAIL_TEMPLATES.find(t => t.type === type) || null
+    },
+    updateEmailTemplate(type: string, updates: Partial<EmailTemplate>) {
+      const tmpl = EMAIL_TEMPLATES.find(t => t.type === type)
+      if (tmpl) Object.assign(tmpl, updates)
+    },
+    resetEmailTemplate(type: string) {
+      const tmpl = EMAIL_TEMPLATES.find(t => t.type === type)
+      const def = DEFAULT_EMAIL_TEMPLATES.find(t => t.type === type)
+      if (tmpl && def) Object.assign(tmpl, { subject: def.subject, heading: def.heading, body: def.body, buttonText: def.buttonText })
+    },
+
+    // --- Integration Credentials ---
+    integrationCredentials: INTEGRATION_CREDENTIALS,
+    getIntegrationCredentials(partnerId: string, type: string) {
+      return INTEGRATION_CREDENTIALS.find(c => c.partner_id === partnerId && c.type === type) || null
+    },
+    isIntegrationConnected(partnerId: string, type: string) {
+      const cred = INTEGRATION_CREDENTIALS.find(c => c.partner_id === partnerId && c.type === type)
+      return cred?.is_connected || false
+    },
+    saveIntegrationCredentials(partnerId: string, type: string, credentials: Record<string, string>, details: Record<string, any> | null = null) {
+      const existing = INTEGRATION_CREDENTIALS.find(c => c.partner_id === partnerId && c.type === type)
+      if (existing) {
+        existing.credentials = credentials
+        existing.is_connected = true
+        existing.details = details
+        existing.last_tested_at = new Date().toISOString()
+        return existing
+      }
+      const entry: StoredIntegrationCredentials = {
+        id: `intcred-${Date.now()}`,
+        partner_id: partnerId,
+        type,
+        credentials,
+        is_connected: true,
+        details,
+        last_tested_at: new Date().toISOString(),
+      }
+      INTEGRATION_CREDENTIALS.push(entry)
+      return entry
+    },
+    disconnectIntegration(partnerId: string, type: string) {
+      const idx = INTEGRATION_CREDENTIALS.findIndex(c => c.partner_id === partnerId && c.type === type)
+      if (idx !== -1) INTEGRATION_CREDENTIALS.splice(idx, 1)
+    },
+
+    // --- Smart Meter ---
+    allSmartMeters: ALL_SMART_METERS,
+    getCustomerMeter(customerId: string) {
+      return ALL_SMART_METERS.find(m => m.customer_id === customerId) || null
+    },
+    getMeterReadings(_meterId: string) {
+      return MOCK_METER_READINGS
+    },
+    linkSmartMeter(customerId: string, partnerId: string, postcode: string, meterId: string) {
+      // Check if already linked
+      const existing = ALL_SMART_METERS.find(m => m.customer_id === customerId)
+      if (existing) {
+        existing.postcode = postcode
+        existing.meter_id = meterId
+        existing.status = 'pending'
+        existing.error_message = null
+        existing.updated_at = new Date().toISOString()
+        // Simulate async linking
+        setTimeout(() => {
+          existing.status = 'active'
+          existing.linked_at = new Date().toISOString()
+          existing.updated_at = new Date().toISOString()
+        }, 2000)
+        return existing
+      }
+      const meter: SmartMeter = {
+        id: `meter-${Date.now()}`,
+        customer_id: customerId,
+        partner_id: partnerId,
+        postcode,
+        meter_id: meterId,
+        status: 'pending',
+        error_message: null,
+        linked_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+      ALL_SMART_METERS.push(meter)
+      // Simulate async linking
+      setTimeout(() => {
+        meter.status = 'active'
+        meter.linked_at = new Date().toISOString()
+        meter.updated_at = new Date().toISOString()
+      }, 2000)
+      return meter
+    },
+    unlinkSmartMeter(customerId: string) {
+      const idx = ALL_SMART_METERS.findIndex(m => m.customer_id === customerId)
+      if (idx !== -1) ALL_SMART_METERS.splice(idx, 1)
+    },
+
+    // --- Customer Dossier: Products ---
+    allCustomerProducts: ALL_CUSTOMER_PRODUCTS,
+    customerProducts: computed(() => ALL_CUSTOMER_PRODUCTS.filter(p => p.partner_id === 'partner-1')),
+    getCustomerProducts(customerId: string) {
+      return ALL_CUSTOMER_PRODUCTS.filter(p => p.customer_id === customerId)
+    },
+    addCustomerProduct(data: Omit<CustomerProduct, 'id' | 'created_at' | 'updated_at'>) {
+      const now = new Date().toISOString()
+      const product: CustomerProduct = {
+        ...data,
+        id: `prod-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        created_at: now,
+        updated_at: now,
+      }
+      ALL_CUSTOMER_PRODUCTS.push(product)
+      return product
+    },
+    updateCustomerProduct(id: string, data: Partial<CustomerProduct>) {
+      const product = ALL_CUSTOMER_PRODUCTS.find(p => p.id === id)
+      if (product) Object.assign(product, data, { updated_at: new Date().toISOString() })
+      return product
+    },
+    removeCustomerProduct(id: string) {
+      const idx = ALL_CUSTOMER_PRODUCTS.findIndex(p => p.id === id)
+      if (idx !== -1) ALL_CUSTOMER_PRODUCTS.splice(idx, 1)
+    },
+
+    // --- Customer Dossier: Documents ---
+    allCustomerDocuments: ALL_CUSTOMER_DOCUMENTS,
+    customerDocuments: computed(() => ALL_CUSTOMER_DOCUMENTS.filter(d => d.partner_id === 'partner-1')),
+    getCustomerDocuments(customerId: string) {
+      return ALL_CUSTOMER_DOCUMENTS.filter(d => d.customer_id === customerId)
+    },
+    addCustomerDocument(data: Omit<CustomerDocument, 'id' | 'created_at'>) {
+      const now = new Date().toISOString()
+      const doc: CustomerDocument = {
+        ...data,
+        id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        created_at: now,
+      }
+      ALL_CUSTOMER_DOCUMENTS.push(doc)
+      return doc
+    },
+    removeCustomerDocument(id: string) {
+      const idx = ALL_CUSTOMER_DOCUMENTS.findIndex(d => d.id === id)
+      if (idx !== -1) ALL_CUSTOMER_DOCUMENTS.splice(idx, 1)
     },
 
     deletePartner(id: string) {

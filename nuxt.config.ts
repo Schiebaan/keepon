@@ -1,9 +1,10 @@
 export default defineNuxtConfig({
   compatibilityDate: '2025-01-01',
-  devtools: { enabled: true },
+  devtools: { enabled: process.env.NODE_ENV !== 'production' },
 
   // Use app/ as source directory (same as compat v4, but without the .nuxt/dist cleanup that causes EPERM on Windows)
   srcDir: 'app/',
+  serverDir: 'server/',
 
   modules: [
     // Supabase alleen laden als we NIET in demo mode zijn
@@ -14,7 +15,7 @@ export default defineNuxtConfig({
     redirectOptions: {
       login: '/login',
       callback: '/auth/callback',
-      exclude: ['/', '/login', '/welkom/*', '/voorwaarden/*'],
+      exclude: ['/', '/login', '/welkom/*', '/voorwaarden/*', '/api/*', '/auth/*'],
     },
   },
 
@@ -40,11 +41,15 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: 'RunON',
+      title: 'UPsol',
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
         { name: 'description', content: 'Modulair klantportaal voor installateurs' },
+        { name: 'theme-color', content: '#111827' },
+      ],
+      link: [
+        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
       ],
     },
   },
@@ -58,13 +63,15 @@ export default defineNuxtConfig({
     strict: true,
   },
 
-  // Prevent Windows EPERM errors during HMR
-  vite: {
-    server: {
-      watch: {
-        usePolling: true,
-        interval: 1000,
+  // Polling only needed for Windows/dev — skip in production
+  ...(process.env.NODE_ENV !== 'production' ? {
+    vite: {
+      server: {
+        watch: {
+          usePolling: true,
+          interval: 1000,
+        },
       },
     },
-  },
+  } : {}),
 })

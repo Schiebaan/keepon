@@ -16,7 +16,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 echo -e "${GREEN}╔══════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║   RunON Deploy — runon.nl                ║${NC}"
+echo -e "${GREEN}║   RunON Deploy — upsol.nl                ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -73,5 +73,5 @@ pm2 status
 echo ""
 echo "Logs bekijken:  pm2 logs $APP_NAME"
 echo "Status:         pm2 monit"
-echo "Website:        https://runon.nl"
+echo "Website:        https://upsol.nl"
 echo ""

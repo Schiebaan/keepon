@@ -1,7 +1,7 @@
 import type { TenantBranding } from '~~/shared/types/tenant'
 
 const tenantCache = new Map<string, { data: TenantBranding; expires: number }>()
-const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+const CACHE_TTL = 30 * 1000 // 30 seconds — short TTL so branding changes appear quickly
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()

@@ -11,7 +11,7 @@ export function useAuth() {
     if (!userRole.value) userRole.value = 'platform_admin'
 
     return {
-      user: ref({ id: 'demo-user', email: 'demo@runon.nl' }),
+      user: ref({ id: 'demo-user', email: 'demo@upsol.nl' }),
       userRole,
       isLoading,
       resolveRole: async () => userRole.value ?? 'platform_admin',
@@ -28,7 +28,6 @@ export function useAuth() {
   // Production mode with Supabase
   const supabase = useSupabaseClient()
   const user = useSupabaseUser()
-  const tenant = useTenant()
 
   async function resolveRole() {
     if (!user.value) {
@@ -38,16 +37,14 @@ export function useAuth() {
 
     isLoading.value = true
     try {
-      const query = supabase
-        .from('user_roles')
-        .select('role')
-        .eq('auth_user_id', user.value.id)
-
-      if (tenant.value) {
-        query.or(`partner_id.eq.${tenant.value.id},role.eq.platform_admin`)
+      // Get current session token
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = {}
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
       }
-
-      const { data } = await query.limit(1).single()
+      // Fetch role via server API (bypasses RLS issues)
+      const data = await $fetch('/api/auth/role', { headers })
       userRole.value = (data?.role as UserRole) ?? null
       return userRole.value
     } finally {
@@ -60,6 +57,29 @@ export function useAuth() {
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: { emailRedirectTo: redirectTo },
+    })
+    if (error) throw error
+  }
+
+  async function signInWithPassword(email: string, password: string) {
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+    if (error) throw error
+  }
+
+  async function resetPassword(email: string) {
+    const redirectTo = `${window.location.origin}/auth/reset-password`
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo,
+    })
+    if (error) throw error
+  }
+
+  async function updatePassword(newPassword: string) {
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword,
     })
     if (error) throw error
   }
@@ -81,6 +101,9 @@ export function useAuth() {
     isLoading,
     resolveRole,
     signInWithMagicLink,
+    signInWithPassword,
+    resetPassword,
+    updatePassword,
     signOut,
     switchRole: (_role: UserRole) => {}, // no-op in production
     isCustomer,

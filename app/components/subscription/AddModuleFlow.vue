@@ -13,7 +13,8 @@ const emit = defineEmits<{
   added: [moduleType: string]
 }>()
 
-const { partnerModuleConfigs, serviceTiers, addSubscription, subscriptions, partner, getActiveModuleTypes } = useMockData()
+const { partner } = usePartner()
+const { partnerModuleConfigs, serviceTiers, addSubscription, subscriptions, getActiveModuleTypes } = useMockData()
 
 // --- State ---
 const step = ref<1 | 2 | 3>(1)

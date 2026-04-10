@@ -3,19 +3,13 @@ const props = defineProps<{
   variant?: 'admin' | 'customer'
 }>()
 
-const { partner, subscriptions } = useMockData()
+const { partner } = usePartner()
 const { signOut } = useAuth()
 
-// Customer nav: check active module types
-const hasSolar = computed(() =>
-  subscriptions.some(s => s.customer_id === 'cust-1' && s.status === 'active' && s.partner_module_config?.module_definition?.type === 'solar')
-)
-const hasHeatPump = computed(() =>
-  subscriptions.some(s => s.customer_id === 'cust-1' && s.status === 'active' && s.partner_module_config?.module_definition?.type === 'heat_pump')
-)
-const hasEv = computed(() =>
-  subscriptions.some(s => s.customer_id === 'cust-1' && s.status === 'active' && s.partner_module_config?.module_definition?.type === 'ev_charger')
-)
+// Show all module links — they show "not connected" state if not active
+const hasSolar = ref(true)
+const hasHeatPump = ref(true)
+const hasEv = ref(true)
 
 // Mobile menu
 const isMenuOpen = ref(false)
@@ -118,6 +112,15 @@ watch(() => route.fullPath, () => {
         >
           <AppIcon name="ev-charger" :size="16" />
           Laadpaal
+        </NuxtLink>
+
+        <NuxtLink
+          to="/klant/energie"
+          class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+          active-class="!bg-emerald-50 !text-emerald-700 !font-semibold"
+        >
+          <AppIcon name="zap" :size="16" />
+          Energie
         </NuxtLink>
 
         <NuxtLink
@@ -243,6 +246,14 @@ watch(() => route.fullPath, () => {
           >
             <AppIcon name="ev-charger" :size="18" />
             Laadpaal
+          </NuxtLink>
+
+          <NuxtLink
+            to="/klant/energie"
+            class="flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-100"
+          >
+            <AppIcon name="zap" :size="18" />
+            Energie
           </NuxtLink>
 
           <NuxtLink

@@ -23,3 +23,5 @@ logs
 .env.*
 !.env.example
 !.env.production.example
+test-e2e.mjs
+scripts/

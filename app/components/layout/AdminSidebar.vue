@@ -1,15 +1,15 @@
 <script setup lang="ts">
-const { partner } = useMockData()
+const { partner } = usePartner()
 const { signOut } = useAuth()
 const route = useRoute()
 
 const navItems = [
   { label: 'Dashboard', icon: 'dashboard', to: '/admin' },
   { label: 'Klanten', icon: 'users', to: '/admin/customers' },
-  { label: 'Modules', icon: 'puzzle', to: '/admin/modules' },
   { label: 'Betalingen', icon: 'credit-card', to: '/admin/payments' },
   { label: 'Service', icon: 'tool', to: '/admin/service' },
   { label: 'Communicatie', icon: 'mail', to: '/admin/communicatie' },
+  { label: 'Gebruikers', icon: 'users', to: '/admin/users' },
   { label: 'Instellingen', icon: 'settings', to: '/admin/settings' },
 ]
 

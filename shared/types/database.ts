@@ -151,3 +151,59 @@ export interface AuditLogEntry {
 
 export type ModuleType = 'solar' | 'heat_pump' | 'ev_charger'
 export type IntegrationType = 'sundata' | 'weheat' | 'easee'
+
+// Customer Dossier
+export type ProductCategory = 'solar_panel' | 'inverter' | 'heat_pump' | 'ev_charger' | 'battery' | 'other'
+export type DocumentCategory = 'factuur' | 'datasheet' | 'opleverdocument' | 'garantiebewijs' | 'offerte' | 'overig'
+
+export interface CustomerProduct {
+  id: string
+  customer_id: string
+  partner_id: string
+  name: string
+  brand: string | null
+  model: string | null
+  category: ProductCategory
+  serial_number: string | null
+  installation_date: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+// Smart Meter
+export type SmartMeterStatus = 'not_linked' | 'pending' | 'active' | 'error'
+
+export interface SmartMeter {
+  id: string
+  customer_id: string
+  partner_id: string
+  postcode: string
+  meter_id: string // laatste 6 cijfers
+  status: SmartMeterStatus
+  error_message: string | null
+  linked_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SmartMeterReading {
+  timestamp: string
+  consumption_wh: number    // afname van net
+  production_wh: number     // teruglevering aan net
+  gas_m3: number | null     // gasverbruik (optioneel)
+}
+
+export interface CustomerDocument {
+  id: string
+  customer_id: string
+  partner_id: string
+  name: string
+  category: DocumentCategory
+  file_path: string
+  file_size_bytes: number | null
+  mime_type: string | null
+  notes: string | null
+  uploaded_at: string
+  created_at: string
+}

@@ -7,17 +7,20 @@ export async function requireAuth(event: H3Event) {
     return { id: 'demo-user', email: 'demo@voltvia.nl' }
   }
 
-  // Production: use Supabase server auth
-  // Dynamic import to avoid build warnings when module is disabled
-  const supabaseModulePath = '#supabase/server'
-  const mod = await import(/* @vite-ignore */ supabaseModulePath).catch(() => null)
-  if (!mod) {
-    throw createError({ statusCode: 500, message: 'Supabase module niet geladen' })
-  }
-  const user = await mod.serverSupabaseUser(event)
-  if (!user) {
+  // Get access token from Authorization header
+  const authHeader = getHeader(event, 'authorization')
+  if (!authHeader?.startsWith('Bearer ')) {
     throw createError({ statusCode: 401, message: 'Niet ingelogd' })
   }
+
+  const accessToken = authHeader.slice(7)
+  const supabase = getServiceRoleClient(event)
+
+  const { data: { user }, error } = await supabase.auth.getUser(accessToken)
+  if (error || !user) {
+    throw createError({ statusCode: 401, message: 'Niet ingelogd' })
+  }
+
   return user
 }
 
@@ -36,7 +39,7 @@ export async function requireRole(event: H3Event, requiredRole: 'partner_admin' 
   const query = supabase
     .from('user_roles')
     .select('role')
-    .eq('auth_user_id', user.id)
+    .eq('user_id', user.id)
 
   if (requiredRole === 'platform_admin') {
     query.eq('role', 'platform_admin')

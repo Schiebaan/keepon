@@ -1,16 +1,23 @@
 <script setup lang="ts">
 definePageMeta({ layout: false })
 
+const config = useRuntimeConfig()
 const { resolveRole } = useAuth()
 
+// Check if we're on a partner subdomain
+const isSubdomain = typeof window !== 'undefined'
+  && config.public.baseDomain
+  && window.location.hostname !== config.public.baseDomain
+  && window.location.hostname !== `www.${config.public.baseDomain}`
+  && window.location.hostname.endsWith(config.public.baseDomain as string)
+
 onMounted(async () => {
-  // Supabase handles the token exchange automatically
-  // We just need to resolve the user's role and redirect
   const role = await resolveRole()
 
   switch (role) {
     case 'platform_admin':
-      navigateTo('/platform')
+      // On a subdomain, go to partner admin view; on main domain, go to platform
+      navigateTo(isSubdomain ? '/admin' : '/platform')
       break
     case 'partner_admin':
       navigateTo('/admin')

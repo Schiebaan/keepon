@@ -2,5 +2,5 @@
   <NuxtLayout>
     <NuxtPage />
   </NuxtLayout>
-  <RoleSwitcher />
+  <RoleSwitcher v-if="useRuntimeConfig().public.demoMode" />
 </template>

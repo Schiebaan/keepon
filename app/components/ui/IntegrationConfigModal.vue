@@ -6,6 +6,7 @@ const props = defineProps<{
     desc: string
     type?: string       // module type for monitoring integrations
     icon?: string       // icon name for admin integrations
+    integrationType?: string // sundata, weheat, easee, mollie, etc.
     category: 'monitoring' | 'admin'
     connected: boolean
   } | null
@@ -15,6 +16,9 @@ const emit = defineEmits<{
   close: []
   saved: []
 }>()
+
+const { partner } = usePartner()
+const { getCredentials: getIntegrationCredentials, testAndSave, disconnect: disconnectIntegration } = useIntegrations()
 
 // Integration credential definitions
 const credentialFields: Record<string, { label: string; key: string; type: string; placeholder: string }[]> = {
@@ -50,7 +54,7 @@ const integrationInfo: Record<string, { description: string; helpUrl: string; fe
   'Sundata': {
     description: 'Koppel met Sundata om de zonnepanelen van je klanten real-time te monitoren. Ondersteunt alle merken omvormers.',
     helpUrl: 'https://sundata.nl/docs',
-    features: ['Real-time opbrengstdata', 'Storingmeldingen', 'Alle omvormer-merken', 'Historische data'],
+    features: ['Storingmeldingen', 'Alle omvormer-merken', 'Historische data'],
   },
   'Weheat': {
     description: 'Koppel met WeHeat voor real-time monitoring van warmtepompen. Zie COP, vermogen en watertemperatuur.',
@@ -84,29 +88,15 @@ const integrationInfo: Record<string, { description: string; helpUrl: string; fe
   },
 }
 
-// Mock devices per integration
-const mockDevices: Record<string, { id: string; name: string; serial: string; customer?: string }[]> = {
-  'Sundata': [
-    { id: 'sd-1', name: 'SolarEdge SE5000H', serial: 'SE-2024-4821', customer: 'Fam. De Vries' },
-    { id: 'sd-2', name: 'Enphase IQ7+', serial: 'EN-2024-7733', customer: 'Fam. Janssen' },
-    { id: 'sd-3', name: 'SMA Sunny Boy 5.0', serial: 'SMA-2024-1092' },
-    { id: 'sd-4', name: 'Huawei SUN2000', serial: 'HW-2024-6614', customer: 'Dhr. Bakker' },
-  ],
-  'Weheat': [
-    { id: 'wh-1', name: 'WeHeat Neo 8kW', serial: 'WH-NEO-0482', customer: 'Fam. De Vries' },
-    { id: 'wh-2', name: 'WeHeat Neo 12kW', serial: 'WH-NEO-1204' },
-  ],
-  'Easee': [
-    { id: 'ea-1', name: 'Easee Home', serial: 'EH-NL-44921', customer: 'Fam. Janssen' },
-    { id: 'ea-2', name: 'Easee Charge', serial: 'EC-NL-33012' },
-  ],
-}
-
 // State
 const step = ref<'credentials' | 'testing' | 'success' | 'devices'>('credentials')
 const credentials = ref<Record<string, string>>({})
 const showPasswords = ref<Record<string, boolean>>({})
 const testError = ref('')
+
+// Real devices from API
+const devices = ref<{ id: string; name: string; serial?: string; customer?: string }[]>([])
+const devicesLoading = ref(false)
 
 const fields = computed(() => {
   if (!props.integration) return []
@@ -118,33 +108,26 @@ const info = computed(() => {
   return integrationInfo[props.integration.name] || null
 })
 
-const devices = computed(() => {
-  if (!props.integration) return []
-  return mockDevices[props.integration.name] || []
-})
+const hasDevices = computed(() => testDetails.value?.plants > 0 || testDetails.value?.heatPumps > 0 || testDetails.value?.chargers > 0)
 
-const hasDevices = computed(() => devices.value.length > 0)
-
-// Pre-fill credentials if already connected (demo)
+// Load saved credentials when opening
 watch(() => props.open, (isOpen) => {
   if (isOpen && props.integration) {
-    step.value = props.integration.connected ? 'success' : 'credentials'
-    credentials.value = {}
     showPasswords.value = {}
     testError.value = ''
+    testDetails.value = null
 
-    // Pre-fill demo credentials for connected integrations
-    if (props.integration.connected) {
-      const fieldDefs = credentialFields[props.integration.name] || []
-      fieldDefs.forEach(f => {
-        if (f.type === 'password') {
-          credentials.value[f.key] = '••••••••••••'
-        } else if (f.type === 'email') {
-          credentials.value[f.key] = 'admin@volt4u.nl'
-        } else {
-          credentials.value[f.key] = 'demo-value'
-        }
-      })
+    const intType = props.integration.integrationType
+    const saved = intType ? getIntegrationCredentials(partner.id, intType) : null
+
+    if (saved?.is_connected) {
+      step.value = 'success'
+      // Show saved credentials (mask passwords)
+      credentials.value = { ...saved.credentials }
+      testDetails.value = saved.details || null
+    } else {
+      step.value = 'credentials'
+      credentials.value = {}
     }
   }
 })
@@ -157,22 +140,68 @@ function togglePassword(key: string) {
   showPasswords.value[key] = !showPasswords.value[key]
 }
 
+const testDetails = ref<Record<string, any> | null>(null)
+
 async function testConnection() {
   step.value = 'testing'
   testError.value = ''
+  testDetails.value = null
 
-  // Simulate API call
-  await new Promise(resolve => setTimeout(resolve, 1800))
+  const intType = props.integration?.integrationType
+  if (!intType) {
+    // Fallback: simulate for non-implemented integrations
+    await new Promise(resolve => setTimeout(resolve, 1500))
+    step.value = 'success'
+    return
+  }
 
-  // Always succeed in demo
-  step.value = 'success'
+  try {
+    const result = await testAndSave(partner.id, intType, credentials.value)
+
+    if (result.success) {
+      testDetails.value = result.details || null
+      step.value = 'success'
+    } else {
+      testError.value = result.error || 'Verbinding mislukt'
+      step.value = 'credentials'
+    }
+  } catch (err: any) {
+    testError.value = err?.data?.message || 'Verbinding mislukt. Controleer je gegevens.'
+    step.value = 'credentials'
+  }
 }
 
-function showDevices() {
+async function showDevices() {
   step.value = 'devices'
+  devicesLoading.value = true
+  devices.value = []
+
+  try {
+    const intType = props.integration?.integrationType
+    if (intType) {
+      const supabase = useSupabaseClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.access_token) {
+        const result = await $fetch<any[]>(`/api/integrations/${intType}/devices`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        }).catch(() => [])
+        devices.value = (result || []).map((d: any) => ({
+          id: d.id,
+          name: d.name || `Apparaat ${d.id}`,
+          serial: d.serial || d.id,
+        }))
+      }
+    }
+  } catch {} finally {
+    devicesLoading.value = false
+  }
 }
 
 function handleDisconnect() {
+  const intType = props.integration?.integrationType
+  if (intType) {
+    disconnectIntegration(partner.id, intType)
+  }
   step.value = 'credentials'
   credentials.value = {}
 }
@@ -302,6 +331,14 @@ function handleClose() {
                 </div>
               </div>
 
+              <!-- Error message -->
+              <div v-if="testError" class="mt-4 rounded-lg bg-red-50 border border-red-200 p-3">
+                <p class="text-sm text-red-700 flex items-center gap-2">
+                  <AppIcon name="x-circle" :size="16" class="text-red-500 shrink-0" />
+                  {{ testError }}
+                </p>
+              </div>
+
               <!-- Actions -->
               <div class="mt-5 flex justify-end gap-3">
                 <button class="btn-secondary" @click="handleClose">Annuleren</button>
@@ -332,7 +369,19 @@ function handleClose() {
                 </div>
                 <p class="text-sm font-semibold text-green-800">Verbinding actief</p>
                 <p class="mt-1 text-xs text-green-600">
-                  {{ integration.name }} is succesvol gekoppeld. Gegevens worden automatisch gesynchroniseerd.
+                  {{ integration.name }} is succesvol gekoppeld.
+                  <template v-if="testDetails?.companies != null">
+                    Verbonden met {{ testDetails.companies }} bedrijf(ven).
+                  </template>
+                  <template v-else-if="testDetails?.heatPumps != null">
+                    {{ testDetails.heatPumps }} warmtepomp(en) gevonden.
+                  </template>
+                  <template v-else-if="testDetails?.chargers != null">
+                    {{ testDetails.chargers }} laadpa(a)l(en) gevonden.
+                  </template>
+                  <template v-else>
+                    Gegevens worden automatisch gesynchroniseerd.
+                  </template>
                 </p>
               </div>
 
@@ -402,10 +451,19 @@ function handleClose() {
               </button>
 
               <h4 class="text-sm font-semibold text-gray-900 mb-3">
-                Gekoppelde apparaten ({{ devices.length }})
+                Gekoppelde apparaten
               </h4>
 
-              <div class="space-y-2">
+              <div v-if="devicesLoading" class="py-6 text-center">
+                <div class="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-gray-200 border-t-gray-500" />
+                <p class="mt-2 text-xs text-gray-500">Apparaten ophalen...</p>
+              </div>
+
+              <div v-else-if="devices.length === 0" class="py-6 text-center">
+                <p class="text-sm text-gray-500">Geen apparaten gevonden.</p>
+              </div>
+
+              <div v-else class="space-y-2">
                 <div
                   v-for="device in devices"
                   :key="device.id"

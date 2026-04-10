@@ -1,49 +1,47 @@
 <script setup lang="ts">
 definePageMeta({ layout: 'customer', middleware: ['auth'] })
 
-const { currentCustomer, currentCustomerInstallations, partner, updateCurrentCustomer } = useMockData()
-const installation = currentCustomerInstallations[0]
+const { partner } = usePartner()
+const { customer, isLoading } = useCurrentCustomer()
+const supabase = useSupabaseClient()
 
-// --- Address edit ---
-const isEditingAddress = ref(false)
+const isEditing = ref(false)
 const isSaving = ref(false)
 const showSuccess = ref(false)
-const addressForm = ref({
-  street: '',
-  house_number: '',
-  postal_code: '',
-  city: '',
-})
+const editForm = ref({ full_name: '', phone: '', street: '', house_number: '', postal_code: '', city: '' })
 
-function startEditAddress() {
-  addressForm.value = {
-    street: currentCustomer.street || '',
-    house_number: currentCustomer.house_number || '',
-    postal_code: currentCustomer.postal_code || '',
-    city: currentCustomer.city || '',
+function startEdit() {
+  if (!customer.value) return
+  editForm.value = {
+    full_name: customer.value.full_name || '',
+    phone: customer.value.phone || '',
+    street: customer.value.street || '',
+    house_number: customer.value.house_number || '',
+    postal_code: customer.value.postal_code || '',
+    city: customer.value.city || '',
   }
-  isEditingAddress.value = true
-  showSuccess.value = false
+  isEditing.value = true
 }
 
-function cancelEditAddress() {
-  isEditingAddress.value = false
-}
-
-function saveAddress() {
+async function saveEdit() {
+  if (!customer.value) return
   isSaving.value = true
-  setTimeout(() => {
-    updateCurrentCustomer({
-      street: addressForm.value.street,
-      house_number: addressForm.value.house_number,
-      postal_code: addressForm.value.postal_code,
-      city: addressForm.value.city,
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) return
+
+    const updated = await $fetch(`/api/customers/${customer.value.id}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${session.access_token}` },
+      body: editForm.value,
     })
-    isEditingAddress.value = false
-    isSaving.value = false
+    Object.assign(customer.value, updated)
+    isEditing.value = false
     showSuccess.value = true
-    setTimeout(() => { showSuccess.value = false }, 4000)
-  }, 500)
+    setTimeout(() => { showSuccess.value = false }, 3000)
+  } catch {} finally {
+    isSaving.value = false
+  }
 }
 </script>
 
@@ -51,168 +49,92 @@ function saveAddress() {
   <div>
     <div class="mb-6">
       <h1 class="text-2xl font-bold text-gray-900">Mijn gegevens</h1>
-      <p class="mt-1 text-sm text-gray-500">Beheer je contactgegevens en adres.</p>
+      <p class="mt-1 text-sm text-gray-500">Bekijk en wijzig je persoonlijke gegevens.</p>
     </div>
 
-    <!-- Success message -->
-    <Transition
-      enter-active-class="transition duration-200 ease-out"
-      enter-from-class="opacity-0 -translate-y-2"
-      enter-to-class="opacity-100 translate-y-0"
-      leave-active-class="transition duration-150 ease-in"
-      leave-from-class="opacity-100 translate-y-0"
-      leave-to-class="opacity-0 -translate-y-2"
-    >
-      <div v-if="showSuccess" class="mb-6 flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 p-4">
-        <AppIcon name="check-circle" :size="18" class="text-green-600" />
-        <p class="text-sm font-medium text-green-800">Adreswijziging succesvol doorgegeven. Je installateur is op de hoogte gebracht.</p>
-      </div>
-    </Transition>
+    <div v-if="isLoading" class="section py-12 text-center">
+      <div class="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
+    </div>
 
-    <div class="grid gap-6 lg:grid-cols-2">
-      <!-- Personal information -->
-      <div class="section">
-        <div class="mb-5 flex items-center gap-3">
-          <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-            <AppIcon name="users" :size="20" />
-          </div>
-          <h2 class="text-base font-semibold text-gray-900">Contactgegevens</h2>
-        </div>
-
-        <div class="space-y-4">
-          <div>
-            <label class="label">Naam</label>
-            <input type="text" :value="currentCustomer.full_name" class="input" readonly />
-          </div>
-          <div>
-            <label class="label">E-mailadres</label>
-            <input type="email" :value="currentCustomer.email" class="input" readonly />
-          </div>
-          <div>
-            <label class="label">Telefoonnummer</label>
-            <input type="tel" :value="currentCustomer.phone" class="input" readonly />
-          </div>
-        </div>
-
-        <p class="mt-4 text-xs text-gray-400">
-          Neem contact op met je installateur om contactgegevens te wijzigen.
-        </p>
-      </div>
-
-      <!-- Address -->
-      <div class="section">
-        <div class="mb-5 flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-green-50 text-green-600">
-              <AppIcon name="map-pin" :size="20" />
-            </div>
-            <h2 class="text-base font-semibold text-gray-900">Adres</h2>
-          </div>
-          <button
-            v-if="!isEditingAddress"
-            class="btn-secondary text-sm inline-flex items-center gap-1.5"
-            @click="startEditAddress"
-          >
+    <div v-else-if="customer" class="section">
+      <!-- View mode -->
+      <template v-if="!isEditing">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base font-semibold text-gray-900">Persoonlijke gegevens</h2>
+          <button class="btn-secondary text-sm" @click="startEdit">
             <AppIcon name="settings" :size="14" />
-            Verhuizing doorgeven
+            Bewerken
           </button>
-          <div v-else class="flex gap-2">
-            <button class="btn-primary text-sm inline-flex items-center gap-1.5" :disabled="isSaving" @click="saveAddress">
-              <AppIcon name="check" :size="14" />
+        </div>
+
+        <p v-if="showSuccess" class="mb-4 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-600">Gegevens opgeslagen!</p>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <p class="text-xs text-gray-400">Naam</p>
+            <p class="text-sm font-medium text-gray-900">{{ customer.full_name || '—' }}</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-400">E-mail</p>
+            <p class="text-sm font-medium text-gray-900">{{ customer.email }}</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-400">Telefoon</p>
+            <p class="text-sm font-medium text-gray-900">{{ customer.phone || '—' }}</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-400">Adres</p>
+            <p class="text-sm font-medium text-gray-900">
+              <template v-if="customer.street">{{ customer.street }} {{ customer.house_number }}, {{ customer.postal_code }} {{ customer.city }}</template>
+              <template v-else>—</template>
+            </p>
+          </div>
+        </div>
+      </template>
+
+      <!-- Edit mode -->
+      <template v-else>
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-base font-semibold text-gray-900">Gegevens bewerken</h2>
+          <div class="flex gap-2">
+            <button class="btn-primary text-sm" :disabled="isSaving" @click="saveEdit">
               {{ isSaving ? 'Opslaan...' : 'Opslaan' }}
             </button>
-            <button class="btn-secondary text-sm" @click="cancelEditAddress">Annuleren</button>
+            <button class="btn-secondary text-sm" @click="isEditing = false">Annuleren</button>
           </div>
         </div>
 
-        <!-- Display mode -->
-        <template v-if="!isEditingAddress">
-          <div class="space-y-4">
+        <div class="space-y-3">
+          <div>
+            <label class="label">Naam</label>
+            <input v-model="editForm.full_name" type="text" class="input" />
+          </div>
+          <div>
+            <label class="label">Telefoon</label>
+            <input v-model="editForm.phone" type="tel" class="input" />
+          </div>
+          <div class="grid grid-cols-3 gap-3">
+            <div class="col-span-2">
+              <label class="label">Straat</label>
+              <input v-model="editForm.street" type="text" class="input" />
+            </div>
             <div>
-              <label class="label">Straat en huisnummer</label>
-              <input
-                type="text"
-                :value="`${currentCustomer.street} ${currentCustomer.house_number}`"
-                class="input"
-                readonly
-              />
-            </div>
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <label class="label">Postcode</label>
-                <input type="text" :value="currentCustomer.postal_code" class="input" readonly />
-              </div>
-              <div>
-                <label class="label">Plaats</label>
-                <input type="text" :value="currentCustomer.city" class="input" readonly />
-              </div>
+              <label class="label">Huisnummer</label>
+              <input v-model="editForm.house_number" type="text" class="input" />
             </div>
           </div>
-
-          <a
-            :href="`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(currentCustomer.street + ' ' + currentCustomer.house_number + ', ' + currentCustomer.postal_code + ' ' + currentCustomer.city)}`"
-            target="_blank"
-            rel="noopener"
-            class="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-gray-700"
-          >
-            <AppIcon name="external" :size="14" />
-            Bekijk op Google Maps
-          </a>
-        </template>
-
-        <!-- Edit mode -->
-        <template v-else>
-          <div class="space-y-4">
-            <div class="grid grid-cols-3 gap-3">
-              <div class="col-span-2">
-                <label class="label">Straat</label>
-                <input v-model="addressForm.street" type="text" class="input" />
-              </div>
-              <div>
-                <label class="label">Huisnummer</label>
-                <input v-model="addressForm.house_number" type="text" class="input" />
-              </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="label">Postcode</label>
+              <input v-model="editForm.postal_code" type="text" class="input" />
             </div>
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <label class="label">Postcode</label>
-                <input v-model="addressForm.postal_code" type="text" class="input" />
-              </div>
-              <div>
-                <label class="label">Plaats</label>
-                <input v-model="addressForm.city" type="text" class="input" />
-              </div>
+            <div>
+              <label class="label">Woonplaats</label>
+              <input v-model="editForm.city" type="text" class="input" />
             </div>
-          </div>
-          <p class="mt-3 text-xs text-gray-400">
-            Na het opslaan wordt je installateur automatisch op de hoogte gebracht van je verhuizing.
-          </p>
-        </template>
-      </div>
-    </div>
-
-    <!-- Support contact -->
-    <div class="mt-6 rounded-xl border border-gray-200 bg-white p-5">
-      <div class="flex items-start gap-3">
-        <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-gray-100 text-gray-500">
-          <AppIcon name="external" :size="16" />
-        </div>
-        <div>
-          <h3 class="text-sm font-semibold text-gray-900">Hulp nodig?</h3>
-          <p class="mt-1 text-sm text-gray-500">
-            Neem contact op met je installateur voor vragen of wijzigingen.
-          </p>
-          <div class="mt-2 flex flex-wrap gap-3 text-sm">
-            <a :href="`mailto:${partner.support_email}`" class="font-medium text-blue-600 hover:text-blue-700">
-              {{ partner.support_email }}
-            </a>
-            <span class="text-gray-300">|</span>
-            <a :href="`tel:${partner.support_phone}`" class="font-medium text-blue-600 hover:text-blue-700">
-              {{ partner.support_phone }}
-            </a>
           </div>
         </div>
-      </div>
+      </template>
     </div>
   </div>
 </template>

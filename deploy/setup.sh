@@ -11,7 +11,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 echo -e "${GREEN}╔══════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║   RunON Server Setup — runon.nl          ║${NC}"
+echo -e "${GREEN}║   RunON Server Setup — upsol.nl          ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════╝${NC}"
 echo ""
 
@@ -103,10 +103,10 @@ fi
 echo -e "${YELLOW}[8/8] SSL certificaat aanvragen...${NC}"
 echo "Let op: DNS moet al naar deze server wijzen!"
 echo ""
-read -p "Wil je nu een SSL certificaat aanvragen voor runon.nl? (j/n) " -n 1 -r
+read -p "Wil je nu een SSL certificaat aanvragen voor upsol.nl? (j/n) " -n 1 -r
 echo ""
 if [[ $REPLY =~ ^[Jj]$ ]]; then
-    certbot certonly --nginx -d runon.nl -d www.runon.nl -d '*.runon.nl' \
+    certbot certonly --nginx -d upsol.nl -d www.upsol.nl -d '*.upsol.nl' \
         --agree-tos --no-eff-email
     echo "SSL certificaat aangevraagd"
 
@@ -115,7 +115,7 @@ if [[ $REPLY =~ ^[Jj]$ ]]; then
     echo "Certbot auto-renewal ingeschakeld"
 else
     echo "SSL overgeslagen — voer later uit:"
-    echo "  certbot certonly --nginx -d runon.nl -d www.runon.nl"
+    echo "  certbot certonly --nginx -d upsol.nl -d www.upsol.nl"
 fi
 
 # --- .env template aanmaken ---
@@ -135,7 +135,7 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 MOLLIE_API_KEY=live_xxx
 
 # App
-NUXT_PUBLIC_BASE_DOMAIN=runon.nl
+NUXT_PUBLIC_BASE_DOMAIN=upsol.nl
 ENVEOF
     chown deploy:deploy "$APP_DIR/.env"
     echo ".env template aangemaakt in $APP_DIR/.env"
@@ -175,9 +175,9 @@ echo "  2. Vul de .env in:"
 echo "     nano $APP_DIR/.env"
 echo ""
 echo "  3. Zorg dat DNS A-records wijzen naar deze server:"
-echo "     runon.nl      -> $(curl -s ifconfig.me 2>/dev/null || echo '<server-ip>')"
-echo "     *.runon.nl    -> $(curl -s ifconfig.me 2>/dev/null || echo '<server-ip>')"
-echo "     www.runon.nl  -> $(curl -s ifconfig.me 2>/dev/null || echo '<server-ip>')"
+echo "     upsol.nl      -> $(curl -s ifconfig.me 2>/dev/null || echo '<server-ip>')"
+echo "     *.upsol.nl    -> $(curl -s ifconfig.me 2>/dev/null || echo '<server-ip>')"
+echo "     www.upsol.nl  -> $(curl -s ifconfig.me 2>/dev/null || echo '<server-ip>')"
 echo ""
 echo "  4. Eerste deployment uitvoeren:"
 echo "     sudo -u deploy bash $APP_DIR/deploy/deploy.sh"
