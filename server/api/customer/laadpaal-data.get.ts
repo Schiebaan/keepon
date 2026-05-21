@@ -137,17 +137,39 @@ export default defineEventHandler(async (event) => {
 
   const opMode = state?.chargerOpMode
   const opModeInfo = typeof opMode === 'number' ? OP_MODE_LABELS[opMode] : null
+  const currentPowerW = state?.totalPower ? Math.round(state.totalPower) : 0
+
+  // Easee meldt opMode=3 ("Aan het laden") soms door terwijl er nauwelijks
+  // stroom vloeit — bv. een EV die klaar is met laden maar nog ingeplugd
+  // zit, of een sessie die afgerond wordt. Resultaat: klant ziet "Stroom
+  // gaat nu naar je auto" + 0.0 kW, wat tegenstrijdig is. Onder de 100W
+  // beschouwen we dat als "niet écht laden" en degraderen we naar een
+  // duidelijker label.
+  let displayLabel = opModeInfo?.label || 'Onbekend'
+  let displayHint = opModeInfo?.hint || null
+  let displayTone = opModeInfo?.tone || 'idle'
+  if (opMode === 3 && currentPowerW < 100) {
+    if (state?.sessionEnergy && state.sessionEnergy > 0) {
+      displayLabel = 'Sessie afgerond'
+      displayHint = 'Laden voltooid. Stekker kan eruit.'
+      displayTone = 'done'
+    } else {
+      displayLabel = 'Aangesloten'
+      displayHint = 'Auto staat klaar, maar laadt nu niet.'
+      displayTone = 'ready'
+    }
+  }
 
   return {
     linked: true,
     charger_id: chargerId,
     online: !!state?.isOnline,
     op_mode: opMode ?? null,
-    op_mode_label: opModeInfo?.label || 'Onbekend',
-    op_mode_hint: opModeInfo?.hint || null,
-    op_mode_tone: opModeInfo?.tone || 'idle',
+    op_mode_label: displayLabel,
+    op_mode_hint: displayHint,
+    op_mode_tone: displayTone,
     current_session_kwh: state?.sessionEnergy ? Math.round(state.sessionEnergy * 100) / 100 : 0,
-    current_power_w: state?.totalPower ? Math.round(state.totalPower) : 0,
+    current_power_w: currentPowerW,
     lifetime_kwh: state?.lifetimeEnergy ? Math.round(state.lifetimeEnergy) : 0,
     voltage: state?.voltage ? Math.round(state.voltage * 10) / 10 : 0,
     current_month: {

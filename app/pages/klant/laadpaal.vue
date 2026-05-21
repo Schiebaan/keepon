@@ -118,8 +118,10 @@ function toneStyle(tone?: string) { return toneColors[tone || 'idle'] }
           </div>
         </div>
 
-        <!-- Charging-now bar (only when actively charging) -->
-        <div v-if="data.op_mode_tone === 'charging' && data.current_power_w" class="mt-4 rounded-xl bg-white/70 px-4 py-3">
+        <!-- Charging-now bar — alleen als er ECHT vermogen vloeit. <100W is
+             standby/vampire draw en zou anders als "0.0 kW" verschijnen wat
+             de klant in verwarring brengt. -->
+        <div v-if="data.op_mode_tone === 'charging' && data.current_power_w >= 100" class="mt-4 rounded-xl bg-white/70 px-4 py-3">
           <div class="flex items-baseline justify-between">
             <span class="text-xs text-gray-500">Nu aan het laden</span>
             <span class="text-lg font-semibold text-green-700 tabular-nums">{{ (data.current_power_w / 1000).toFixed(1) }} kW</span>
