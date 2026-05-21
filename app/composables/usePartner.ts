@@ -23,23 +23,44 @@ export function usePartner() {
   }
 
   // Production mode
-  // State is initialized by load-branding.server.ts plugin during SSR
+  // State is initialized by load-branding.server.ts plugin during SSR — this IS the authoritative
+  // value. We deliberately do NOT auto-refetch here because the refetch caused a brief flash of the
+  // wrong partner (e.g. "Demo Installateur") if the API fell back to a different partner for any
+  // reason. Pages that need the extra fields (terms_content, terms_placeholders) should call
+  // loadFullPartner() explicitly.
   const partner = useState<Partner>('currentPartner', () => ({ ...EMPTY_PARTNER }))
   const isLoading = ref(false)
   const _fullLoaded = useState('partnerFullLoaded', () => false)
 
-  // Client: if logged in, load full partner data (includes terms, placeholders)
-  if (!_fullLoaded.value && typeof window !== 'undefined') {
-    _fullLoaded.value = true
+  async function loadFullPartner() {
+    if (_fullLoaded.value || typeof window === 'undefined') return
     const supabase = useSupabaseClient()
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session?.access_token) return
-      $fetch('/api/partners/me', {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) return
+    try {
+      const data: any = await $fetch('/api/partners/me', {
         headers: { Authorization: `Bearer ${session.access_token}` },
-      }).then((data: any) => {
-        if (data?.id) Object.assign(partner.value, data)
-      }).catch(() => {})
-    })
+      })
+      // Only merge if the API agrees with SSR — prevents cross-partner contamination if the
+      // endpoint accidentally falls back to a different partner.
+      if (data?.id && (!partner.value.id || data.id === partner.value.id)) {
+        // Careful merge: keep any client-side defaults that the settings page has populated
+        // on top of (like module_terms), but trust DB values when present.
+        const currentPh = partner.value.terms_placeholders || {}
+        const apiPh = data.terms_placeholders || {}
+        const mergedPlaceholders = {
+          ...currentPh,
+          ...apiPh,
+          module_terms: {
+            ...(currentPh as any).module_terms,
+            ...(apiPh as any).module_terms,
+          },
+        }
+        Object.assign(partner.value, data)
+        partner.value.terms_placeholders = mergedPlaceholders as any
+        _fullLoaded.value = true
+      }
+    } catch {}
   }
 
   // Save partner to Supabase
@@ -76,5 +97,6 @@ export function usePartner() {
     partner: partner as Ref<Partner>,
     isLoading,
     save,
+    loadFullPartner,
   }
 }

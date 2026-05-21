@@ -5,9 +5,22 @@ definePageMeta({ layout: false })
 
 const route = useRoute()
 const slug = route.params.slug as string
-const { getPartnerBySlug } = useMockData()
 
-const partner = getPartnerBySlug(slug)
+interface PartnerTerms {
+  id: string
+  name: string
+  slug: string
+  logo_url: string | null
+  primary_color: string
+  terms_content: string | null
+  terms_placeholders: Record<string, any> | null
+  support_email: string | null
+  support_phone: string | null
+}
+
+// SSR-safe fetch — uses `useFetch` so the data is embedded in the payload and the page
+// renders the terms fully on first paint (good for search engines and bookmarks).
+const { data: partner, error } = await useFetch<PartnerTerms>(`/api/voorwaarden/${slug}`)
 
 const DEFAULT_TERMS_TEMPLATE = `Servicevoorwaarden {{bedrijfsnaam}}
 
@@ -29,75 +42,82 @@ Installatie: het energiesysteem (zonnepanelen, warmtepomp en/of laadpaal) waarop
 3.2 De exacte diensten zijn afhankelijk van het gekozen servicepakket (Start, Slim of Max).
 3.3 {{bedrijfsnaam}} spant zich in om storingen binnen de afgesproken termijn te analyseren en op te lossen.
 
-4. Looptijd en opzegging
+4. Tarieven buiten het contract
 
-4.1 Het servicecontract heeft een minimale looptijd zoals vermeld bij het afsluiten van het contract.
-4.2 Na afloop van de minimale looptijd is het contract maandelijks opzegbaar met een opzegtermijn van 1 maand.
-4.3 Opzegging kan via het klantportaal of per e-mail naar {{email}}.
+4.1 Werkzaamheden die buiten het servicecontract vallen worden gefactureerd tegen het geldende uurtarief van € {{uurtarief}} per uur (excl. btw).
+4.2 Voor het bezoek aan locatie worden voorrijkosten berekend van € {{voorrijkosten}} (excl. btw).
 
-5. Betaling
+5. Productvoorwaarden
 
-5.1 Betaling geschiedt maandelijks via automatische incasso.
-5.2 Bij het uitblijven van betaling wordt de klant per e-mail herinnerd.
-5.3 Na twee mislukte incasso's kan {{bedrijfsnaam}} het servicecontract opschorten.
+Voor specifieke voorwaarden per product gelden de bijlagen hieronder (indien van toepassing op jouw installatie).
 
-6. Monitoring en data
+6. Looptijd en opzegging
 
-6.1 {{bedrijfsnaam}} monitort de installatie via het UPsol-platform in samenwerking met gespecialiseerde monitoringpartners.
-6.2 Klantgegevens worden verwerkt conform de AVG en zijn uitsluitend toegankelijk voor {{bedrijfsnaam}} en de klant zelf.
-6.3 Gegevens van klanten van {{bedrijfsnaam}} zijn nooit zichtbaar voor andere installateurs of derden.
+6.1 Het servicecontract heeft een minimale looptijd zoals vermeld bij het afsluiten van het contract.
+6.2 Na afloop van de minimale looptijd is het contract maandelijks opzegbaar met een opzegtermijn van 1 maand.
+6.3 Opzegging kan via het klantportaal of per e-mail naar {{email}}.
 
-7. Aansprakelijkheid
+7. Betaling
 
-7.1 {{bedrijfsnaam}} is niet aansprakelijk voor schade als gevolg van storingen in de installatie, tenzij sprake is van grove nalatigheid.
-7.2 De aansprakelijkheid van {{bedrijfsnaam}} is beperkt tot het bedrag van het servicecontract over de voorafgaande 12 maanden.
+7.1 Betaling geschiedt maandelijks via automatische incasso.
+7.2 Bij het uitblijven van betaling wordt de klant per e-mail herinnerd.
 
-8. Wijzigingen
+8. Contact
 
-8.1 {{bedrijfsnaam}} behoudt zich het recht voor deze voorwaarden te wijzigen. Klanten worden hiervan minimaal 30 dagen van tevoren per e-mail op de hoogte gesteld.
-8.2 Bij ingrijpende wijzigingen heeft de klant het recht het contract kosteloos op te zeggen.
+Voor vragen over deze voorwaarden:
+{{bedrijfsnaam}} · {{adres}} · {{email}} · {{telefoon}} · KvK: {{kvk}}`
 
-9. Contact
-
-Voor vragen over deze voorwaarden kunt u contact opnemen met:
-{{bedrijfsnaam}}
-{{adres}}
-{{email}}
-{{telefoon}}
-KvK: {{kvk}}`
-
-const termsTemplate = computed(() => {
-  if (!partner) return ''
-  return partner.terms_content || DEFAULT_TERMS_TEMPLATE
+// Combine the raw placeholders with auto-fill fallbacks for the new keys
+const placeholders = computed<Record<string, string>>(() => {
+  const raw = (partner.value?.terms_placeholders || {}) as Record<string, any>
+  return {
+    bedrijfsnaam: raw.bedrijfsnaam || partner.value?.name || '',
+    kvk: raw.kvk || '',
+    adres: raw.adres || '',
+    email: raw.email || partner.value?.support_email || '',
+    telefoon: raw.telefoon || partner.value?.support_phone || '',
+    uurtarief: raw.uurtarief || '—',
+    voorrijkosten: raw.voorrijkosten || '—',
+  }
 })
 
-const renderedTerms = computed(() => {
-  if (!partner) return ''
-  const placeholders = partner.terms_placeholders || {}
-  return renderTerms(termsTemplate.value, placeholders)
+const generalTerms = computed(() => {
+  if (!partner.value) return ''
+  const template = partner.value.terms_content || DEFAULT_TERMS_TEMPLATE
+  return renderTerms(template, placeholders.value)
 })
 
-/**
- * Applies bold styling to section heading lines (lines starting with a number like "1." or "3.2").
- * Returns an array of { text, bold } segments split by line.
- */
-const formattedLines = computed(() => {
-  if (!renderedTerms.value) return []
-  return renderedTerms.value.split('\n').map(line => ({
+const MODULE_META = [
+  { key: 'solar',      label: 'Zonnepanelen',  appendix: 'A' },
+  { key: 'heat_pump',  label: 'Warmtepomp',    appendix: 'B' },
+  { key: 'ev_charger', label: 'Laadpaal',      appendix: 'C' },
+  { key: 'battery',    label: 'Batterij',      appendix: 'D' },
+] as const
+
+/** Bijlagen die daadwerkelijk inhoud hebben, al gerenderd met placeholders. */
+const appendices = computed(() => {
+  const mods = (partner.value?.terms_placeholders?.module_terms || {}) as Record<string, string>
+  return MODULE_META
+    .map(m => ({ ...m, content: (mods[m.key] || '').trim() }))
+    .filter(m => m.content)
+    .map(m => ({ ...m, rendered: renderTerms(m.content, placeholders.value) }))
+})
+
+function formatLines(text: string) {
+  return text.split('\n').map(line => ({
     text: line,
     bold: /^\d+\./.test(line.trim()),
   }))
-})
+}
 
-const partnerInitial = computed(() => {
-  if (!partner) return ''
-  return partner.name.charAt(0).toUpperCase()
-})
+const generalLines = computed(() => formatLines(generalTerms.value))
+
+const partnerInitial = computed(() => partner.value?.name?.charAt(0).toUpperCase() || '')
 </script>
 
 <template>
   <!-- Error state -->
-  <div v-if="!partner" class="terms-page">
+  <div v-if="error || !partner" class="terms-page">
     <div class="terms-container">
       <div class="terms-error">
         <div class="terms-error__icon">?</div>
@@ -106,9 +126,7 @@ const partnerInitial = computed(() => {
           De voorwaardenpagina voor deze partner kon niet worden gevonden.
           Controleer of de URL correct is.
         </p>
-        <NuxtLink to="/" class="terms-error__link">
-          Terug naar de homepage
-        </NuxtLink>
+        <NuxtLink to="/" class="terms-error__link">Terug naar de homepage</NuxtLink>
       </div>
     </div>
   </div>
@@ -116,7 +134,7 @@ const partnerInitial = computed(() => {
   <!-- Terms page -->
   <div v-else class="terms-page">
     <div class="terms-container">
-      <!-- Header with partner branding -->
+      <!-- Header -->
       <header class="terms-header">
         <div class="terms-header__brand">
           <img
@@ -136,16 +154,36 @@ const partnerInitial = computed(() => {
         </div>
       </header>
 
-      <!-- Document title -->
+      <!-- Title -->
       <h1 class="terms-title">Servicevoorwaarden</h1>
 
-      <!-- Rendered terms content -->
+      <!-- General terms -->
       <div class="terms-body">
-        <template v-for="(line, idx) in formattedLines" :key="idx">
+        <template v-for="(line, idx) in generalLines" :key="idx">
           <span v-if="line.bold" class="terms-line terms-line--bold">{{ line.text }}<br/></span>
           <span v-else class="terms-line">{{ line.text }}<br/></span>
         </template>
       </div>
+
+      <!-- Appendices per product (only those with content) -->
+      <template v-if="appendices.length">
+        <hr class="terms-divider" />
+        <section
+          v-for="app in appendices"
+          :key="app.key"
+          :id="`bijlage-${app.key}`"
+          class="terms-appendix"
+        >
+          <p class="terms-appendix__label">Bijlage {{ app.appendix }}</p>
+          <h2 class="terms-appendix__title">Aanvullende voorwaarden — {{ app.label }}</h2>
+          <div class="terms-body">
+            <template v-for="(line, idx) in formatLines(app.rendered)" :key="idx">
+              <span v-if="line.bold" class="terms-line terms-line--bold">{{ line.text }}<br/></span>
+              <span v-else class="terms-line">{{ line.text }}<br/></span>
+            </template>
+          </div>
+        </section>
+      </template>
 
       <!-- Footer -->
       <footer class="terms-footer">
@@ -165,12 +203,11 @@ const partnerInitial = computed(() => {
 }
 
 .terms-container {
-  max-width: 48rem; /* max-w-3xl */
+  max-width: 48rem;
   margin: 0 auto;
   padding: 2rem 0;
 }
 
-/* Header */
 .terms-header {
   margin-bottom: 2rem;
   padding-bottom: 1.5rem;
@@ -185,7 +222,8 @@ const partnerInitial = computed(() => {
 
 .terms-header__logo {
   height: 2.5rem;
-  width: 2.5rem;
+  width: auto;
+  max-width: 8rem;
   border-radius: 0.5rem;
   object-fit: contain;
 }
@@ -208,7 +246,6 @@ const partnerInitial = computed(() => {
   color: #374151;
 }
 
-/* Title */
 .terms-title {
   font-size: 1.75rem;
   font-weight: 700;
@@ -217,15 +254,10 @@ const partnerInitial = computed(() => {
   line-height: 1.3;
 }
 
-/* Terms body */
 .terms-body {
   color: #374151;
   font-size: 0.9375rem;
   line-height: 1.75;
-}
-
-.terms-line {
-  /* whitespace-pre-line behavior via the br tags */
 }
 
 .terms-line--bold {
@@ -233,7 +265,37 @@ const partnerInitial = computed(() => {
   color: #111827;
 }
 
-/* Footer */
+.terms-divider {
+  margin: 3rem 0 2rem;
+  border: 0;
+  border-top: 1px solid #e5e7eb;
+}
+
+.terms-appendix {
+  margin-top: 2.5rem;
+}
+
+.terms-appendix:first-of-type {
+  margin-top: 0;
+}
+
+.terms-appendix__label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #6b7280;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 0.25rem;
+}
+
+.terms-appendix__title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 1rem;
+  line-height: 1.3;
+}
+
 .terms-footer {
   margin-top: 3rem;
   padding-top: 1.5rem;
@@ -247,28 +309,23 @@ const partnerInitial = computed(() => {
   transition: opacity 0.15s;
 }
 
-.terms-footer__link:hover {
-  opacity: 0.8;
-}
-
 /* Error state */
 .terms-error {
   text-align: center;
-  padding: 4rem 1rem;
+  padding: 4rem 0;
 }
 
 .terms-error__icon {
-  width: 4rem;
-  height: 4rem;
-  margin: 0 auto 1.5rem;
+  width: 3rem;
+  height: 3rem;
+  background: #f3f4f6;
   border-radius: 50%;
-  background-color: #fef2f2;
-  color: #dc2626;
-  font-size: 1.5rem;
-  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
+  margin: 0 auto 1rem;
+  font-size: 1.5rem;
+  color: #9ca3af;
 }
 
 .terms-error__title {
@@ -280,57 +337,12 @@ const partnerInitial = computed(() => {
 
 .terms-error__text {
   color: #6b7280;
-  font-size: 0.9375rem;
-  max-width: 28rem;
-  margin: 0 auto 1.5rem;
-  line-height: 1.6;
+  margin-bottom: 1.5rem;
 }
 
 .terms-error__link {
-  color: #3b82f6;
-  font-size: 0.875rem;
+  color: #2563eb;
   font-weight: 500;
   text-decoration: none;
-}
-
-.terms-error__link:hover {
-  text-decoration: underline;
-}
-
-/* Print styles */
-@media print {
-  .terms-page {
-    padding: 0;
-    background: white;
-  }
-
-  .terms-container {
-    max-width: 100%;
-    padding: 0;
-  }
-
-  .terms-header {
-    margin-bottom: 1rem;
-  }
-
-  .terms-header__logo,
-  .terms-header__initial {
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-
-  .terms-footer {
-    display: none;
-  }
-
-  .terms-title {
-    font-size: 1.5rem;
-    margin-bottom: 1.5rem;
-  }
-
-  .terms-body {
-    font-size: 0.8125rem;
-    line-height: 1.6;
-  }
 }
 </style>

@@ -29,6 +29,7 @@ function close() {
   emit('update:modelValue', false)
   setTimeout(resetForm, 300)
 }
+const { onMouseDown: onBackdropDown, onClick: onBackdropClick } = useBackdropClose(close)
 
 function resetForm() {
   form.value = { name: '', category: 'overig', notes: '' }
@@ -75,7 +76,8 @@ function handleSubmit() {
       <div
         v-if="modelValue"
         class="fixed inset-0 z-50 flex items-center justify-center p-4"
-        @click.self="close"
+        @mousedown="onBackdropDown"
+        @click="onBackdropClick"
       >
         <div class="absolute inset-0 bg-black/30 backdrop-blur-sm" />
         <div class="relative w-full max-w-lg rounded-2xl bg-white shadow-xl overflow-hidden">

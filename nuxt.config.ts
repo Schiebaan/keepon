@@ -41,15 +41,11 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: 'UPsol',
+      // Title, description, theme-color and favicon are set dynamically per partner
+      // in app.vue via useHead. Only truly static meta lives here.
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-        { name: 'description', content: 'Modulair klantportaal voor installateurs' },
-        { name: 'theme-color', content: '#111827' },
-      ],
-      link: [
-        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
       ],
     },
   },

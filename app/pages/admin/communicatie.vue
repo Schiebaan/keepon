@@ -1,17 +1,56 @@
 <script setup lang="ts">
 import { formatDate } from '~/utils/formatters'
-// Types
 
 definePageMeta({ layout: 'admin', middleware: ['auth', 'role-partner'] })
 
 const { partner } = usePartner()
 const { templates: emailTemplates, updateTemplate: updateEmailTemplate, resetTemplate: resetEmailTemplate } = useEmailTemplates()
-// Notifications will come from real email log later
-const notifications: any[] = []
 
-const totalSent = computed(() => notifications.filter(n => n.status === 'verzonden').length)
-const totalFailed = computed(() => notifications.filter(n => n.status === 'mislukt').length)
-const thisMonth = computed(() => notifications.filter(n => n.created_at >= '2025-04-01').length)
+// --- Email log (from audit_log via the partner endpoint) ---
+interface EmailLogEntry {
+  id: string
+  type: string
+  type_label: string
+  recipient_email: string
+  recipient_name: string | null
+  subject: string
+  status: 'verzonden' | 'mislukt'
+  created_at: string
+  entity_link: string | null
+}
+interface EmailLogResponse {
+  entries: EmailLogEntry[]
+  stats: { total: number; this_month: number; failed: number }
+}
+
+const logLoading = ref(false)
+const logError = ref('')
+const notifications = ref<EmailLogEntry[]>([])
+const stats = ref({ total: 0, this_month: 0, failed: 0 })
+
+async function loadEmailLog() {
+  if (logLoading.value) return
+  logLoading.value = true
+  logError.value = ''
+  try {
+    const supabase = useSupabaseClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined
+    const res = await $fetch<EmailLogResponse>('/api/partners/email-log', { headers })
+    notifications.value = res.entries
+    stats.value = res.stats
+  } catch (e: any) {
+    logError.value = e?.data?.message || e?.message || 'Kon berichtenlog niet laden'
+  } finally {
+    logLoading.value = false
+  }
+}
+
+onMounted(() => { loadEmailLog() })
+
+const totalSent = computed(() => stats.value.total - stats.value.failed)
+const totalFailed = computed(() => stats.value.failed)
+const thisMonth = computed(() => stats.value.this_month)
 
 // Active tab
 const activeTab = ref<'log' | 'templates'>('templates')
@@ -20,26 +59,13 @@ const activeTab = ref<'log' | 'templates'>('templates')
 const editingTemplate = ref<string | null>(null)
 const previewTemplate = ref<string | null>(null)
 
-function typeLabel(type: MockNotification['type']) {
-  const labels: Record<string, string> = {
-    factuur_verzonden: 'Factuur',
-    contract_bevestiging: 'Contract',
-    opzegging_bevestiging: 'Opzegging',
-    verhuizing_melding: 'Verhuizing',
-    incasso_alert: 'Incasso alert',
-    welkomstmail: 'Welkom',
-  }
-  return labels[type] || type
-}
-
-function typeClass(type: MockNotification['type']) {
+function typeClass(type: string) {
   const classes: Record<string, string> = {
-    factuur_verzonden: 'bg-blue-50 text-blue-700',
-    contract_bevestiging: 'bg-green-50 text-green-700',
-    opzegging_bevestiging: 'bg-gray-100 text-gray-700',
-    verhuizing_melding: 'bg-amber-50 text-amber-700',
-    incasso_alert: 'bg-red-50 text-red-700',
-    welkomstmail: 'bg-purple-50 text-purple-700',
+    welkomstmail:  'bg-purple-50 text-purple-700',
+    ticket:        'bg-amber-50 text-amber-700',
+    installatie:   'bg-green-50 text-green-700',
+    wachtwoord:    'bg-blue-50 text-blue-700',
+    overig:        'bg-gray-100 text-gray-700',
   }
   return classes[type] || 'bg-gray-100 text-gray-700'
 }
@@ -47,10 +73,18 @@ function typeClass(type: MockNotification['type']) {
 function statusClass(status: string) {
   switch (status) {
     case 'verzonden': return 'badge--green'
-    case 'gepland': return 'badge--yellow'
     case 'mislukt': return 'badge--red'
     default: return 'badge--gray'
   }
+}
+
+function formatLogDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString('nl-NL', {
+      day: 'numeric', month: 'short',
+      hour: '2-digit', minute: '2-digit',
+    })
+  } catch { return iso }
 }
 
 // Available placeholder tags
@@ -62,10 +96,14 @@ const placeholders = [
   { tag: '{{module}}', desc: 'Naam van de module' },
 ]
 
-function handleReset(type: string) {
-  if (confirm('Weet je zeker dat je dit template wilt terugzetten naar de standaardtekst?')) {
-    resetEmailTemplate(type)
-  }
+const confirm = useConfirm()
+async function handleReset(type: string) {
+  const ok = await confirm({
+    title: 'Template terugzetten?',
+    message: 'Je aangepaste tekst wordt vervangen door de standaardtekst.',
+    confirmLabel: 'Terugzetten',
+  })
+  if (ok) resetEmailTemplate(type)
 }
 
 // Preview: replace placeholders with example values
@@ -307,7 +345,24 @@ function openPreview(type: string) {
     <!-- Log tab -->
     <div v-if="activeTab === 'log'">
       <div class="section">
-        <div class="overflow-x-auto">
+        <div class="mb-3 flex items-center justify-between">
+          <p class="text-sm text-gray-500">
+            <template v-if="logLoading">Laden...</template>
+            <template v-else-if="logError">{{ logError }}</template>
+            <template v-else-if="!notifications.length">Nog geen berichten verstuurd.</template>
+            <template v-else>{{ notifications.length }} berichten (laatste 90 dagen)</template>
+          </p>
+          <button
+            class="text-xs text-gray-500 hover:text-gray-900 flex items-center gap-1.5 disabled:opacity-50"
+            :disabled="logLoading"
+            @click="loadEmailLog"
+          >
+            <AppIcon name="refresh" :size="14" :class="logLoading ? 'animate-spin' : ''" />
+            Vernieuwen
+          </button>
+        </div>
+
+        <div v-if="notifications.length" class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
               <tr class="border-b border-gray-200 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
@@ -320,15 +375,22 @@ function openPreview(type: string) {
             </thead>
             <tbody class="divide-y divide-gray-100">
               <tr v-for="n in notifications" :key="n.id" class="hover:bg-gray-50">
-                <td class="py-3 pr-3 text-xs text-gray-500 whitespace-nowrap">{{ formatDate(n.created_at) }}</td>
+                <td class="py-3 pr-3 text-xs text-gray-500 whitespace-nowrap">{{ formatLogDate(n.created_at) }}</td>
                 <td class="py-3 pr-3">
                   <span class="inline-flex rounded-md px-2 py-0.5 text-xs font-medium" :class="typeClass(n.type)">
-                    {{ typeLabel(n.type) }}
+                    {{ n.type_label }}
                   </span>
                 </td>
                 <td class="py-3 pr-3">
-                  <p class="text-sm text-gray-900">{{ n.recipient_name }}</p>
-                  <p class="text-xs text-gray-400">{{ n.recipient_email }}</p>
+                  <component
+                    :is="n.entity_link ? 'NuxtLink' : 'div'"
+                    :to="n.entity_link || undefined"
+                    class="block"
+                    :class="n.entity_link ? 'hover:underline' : ''"
+                  >
+                    <p class="text-sm text-gray-900">{{ n.recipient_name || n.recipient_email }}</p>
+                    <p v-if="n.recipient_name" class="text-xs text-gray-400">{{ n.recipient_email }}</p>
+                  </component>
                 </td>
                 <td class="py-3 pr-3 text-sm text-gray-700 max-w-xs truncate">{{ n.subject }}</td>
                 <td class="py-3">
@@ -337,6 +399,12 @@ function openPreview(type: string) {
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <div v-else-if="!logLoading && !logError" class="rounded-xl border border-dashed border-gray-200 bg-gray-50 py-12 px-6 text-center">
+          <AppIcon name="mail" :size="32" class="mx-auto text-gray-300 mb-3" />
+          <p class="text-sm text-gray-500 font-medium">Nog geen berichten verstuurd.</p>
+          <p class="mt-1 text-xs text-gray-400">Zodra je een klant aanmaakt of een ticket beantwoordt verschijnen de berichten hier.</p>
         </div>
       </div>
     </div>

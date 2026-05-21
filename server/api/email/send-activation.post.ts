@@ -58,7 +58,7 @@ export default defineEventHandler(async (event) => {
     to: customerEmail,
     subject: emailContent.subject,
     html: emailContent.html,
-    replyTo: partner?.support_email || undefined,
+    // Geen replyTo — activatie-mail wijst klant rechtstreeks naar portaal.
   })
 
   return result

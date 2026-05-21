@@ -22,3 +22,18 @@ export function formatEnergy(wh: number): string {
 export function formatMollieAmount(cents: number): string {
   return (cents / 100).toFixed(2)
 }
+
+/**
+ * Format a ticket reference as a short, easy-to-say-on-the-phone number.
+ * Returns the bare number (e.g. "7", "42", "143"). Use with a prefix word
+ * in the UI like "Ticket 7" or "#7" depending on the surrounding context.
+ * Returns null when the ticket has no `ticket_number` yet (migration not
+ * run, or row pre-dates the trigger) so callers can hide the ref entirely.
+ */
+export function formatTicketRef(ticket: { ticket_number?: number | null } | null | undefined): string | null {
+  if (!ticket) return null
+  if (typeof ticket.ticket_number === 'number' && ticket.ticket_number > 0) {
+    return String(ticket.ticket_number)
+  }
+  return null
+}

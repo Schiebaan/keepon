@@ -35,10 +35,15 @@ async function handleLink() {
   showSetup.value = false
 }
 
-function handleUnlink() {
-  if (confirm('Weet je zeker dat je je slimme meter wilt ontkoppelen?')) {
-    unlinkMeter()
-  }
+const confirm = useConfirm()
+async function handleUnlink() {
+  const ok = await confirm({
+    title: 'Slimme meter ontkoppelen?',
+    message: 'Je gegevens komen niet meer binnen tot je hem opnieuw koppelt.',
+    confirmLabel: 'Ontkoppelen',
+    dangerous: true,
+  })
+  if (ok) unlinkMeter()
 }
 </script>
 

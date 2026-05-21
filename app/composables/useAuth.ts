@@ -53,12 +53,11 @@ export function useAuth() {
   }
 
   async function signInWithMagicLink(email: string) {
-    const redirectTo = `${window.location.origin}/auth/callback`
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: redirectTo },
+    // Send via our own server — uses Resend with partner branding instead of Supabase email
+    await $fetch('/api/auth/magic-link', {
+      method: 'POST',
+      body: { email },
     })
-    if (error) throw error
   }
 
   async function signInWithPassword(email: string, password: string) {
@@ -82,6 +81,15 @@ export function useAuth() {
       password: newPassword,
     })
     if (error) throw error
+
+    // Fire-and-forget security notification email
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session?.access_token) return
+      $fetch('/api/auth/password-changed', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      }).catch(() => {})
+    })
   }
 
   async function signOut() {

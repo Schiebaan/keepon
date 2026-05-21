@@ -12,7 +12,7 @@
     "postinstall": "node scripts/patch-nuxt-cli.mjs && nuxt prepare"
   },
   "dependencies": {
-    "@mollie/api-client": "^4.4.0",
+    "@mollie/api-client": "^4.5.0",
     "@nuxtjs/supabase": "^2.0.3",
     "@supabase/supabase-js": "^2.95.2",
     "nuxt": "3.15.4",

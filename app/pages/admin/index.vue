@@ -17,8 +17,8 @@ const stats = computed(() => [
   },
   {
     label: 'Actieve modules',
-    value: 0,
-    change: 'Binnenkort beschikbaar',
+    value: totalActiveModules.value,
+    change: '',
     changePositive: true,
     icon: 'puzzle',
     color: '#059669',
@@ -41,8 +41,57 @@ const stats = computed(() => [
   },
 ])
 
-// Recente activiteit — will be populated from audit_log later
-const recentActivity: any[] = []
+// --- Recente activiteit (uit audit_log) ---
+interface ActivityItem {
+  id: string
+  type: 'customer' | 'ticket' | 'installation' | 'email' | 'partner' | 'other'
+  icon: string
+  text: string
+  link: string | null
+  at: string
+}
+
+const recentActivity = ref<ActivityItem[]>([])
+const activityLoading = ref(true)
+
+async function loadActivity() {
+  try {
+    const supabase = useSupabaseClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) return
+    recentActivity.value = await $fetch<ActivityItem[]>('/api/partners/activity', {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+  } catch {
+    recentActivity.value = []
+  } finally {
+    activityLoading.value = false
+  }
+}
+
+onMounted(loadActivity)
+
+function timeAgo(iso: string) {
+  const ms = Date.now() - new Date(iso).getTime()
+  const min = Math.round(ms / 60000)
+  if (min < 1) return 'zojuist'
+  if (min < 60) return `${min} min geleden`
+  const h = Math.round(min / 60)
+  if (h < 24) return `${h} uur geleden`
+  const d = Math.round(h / 24)
+  if (d < 7) return `${d} dag${d === 1 ? '' : 'en'} geleden`
+  return new Date(iso).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })
+}
+
+function activityIconBg(type: string) {
+  switch (type) {
+    case 'customer':     return 'bg-blue-50 text-blue-600'
+    case 'ticket':       return 'bg-amber-50 text-amber-600'
+    case 'installation': return 'bg-green-50 text-green-600'
+    case 'email':        return 'bg-indigo-50 text-indigo-600'
+    default:             return 'bg-gray-100 text-gray-500'
+  }
+}
 
 // System alerts — will be populated from real subscription data later
 const systemAlerts = computed(() => {
@@ -50,12 +99,52 @@ const systemAlerts = computed(() => {
   return alerts
 })
 
-// Module breakdown — shows available modules (counts come later when subscriptions are in Supabase)
-const moduleBreakdown = [
-  { name: 'Zonnepanelen', type: 'solar', count: 0, theme: getModuleTheme('solar') },
-  { name: 'Warmtepomp', type: 'heat_pump', count: 0, theme: getModuleTheme('heat_pump') },
-  { name: 'Laadpaal', type: 'ev_charger', count: 0, theme: getModuleTheme('ev_charger') },
-]
+// --- Module breakdown: live counts per category ---
+interface ModuleStat { total: number; monitored: number }
+const moduleStats = ref<Record<string, ModuleStat>>({
+  solar_panel: { total: 0, monitored: 0 },
+  heat_pump:   { total: 0, monitored: 0 },
+  ev_charger:  { total: 0, monitored: 0 },
+  battery:     { total: 0, monitored: 0 },
+})
+
+async function loadModuleStats() {
+  try {
+    const supabase = useSupabaseClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) return
+    moduleStats.value = await $fetch('/api/partners/module-stats', {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+  } catch {}
+}
+
+onMounted(loadModuleStats)
+
+const moduleBreakdown = computed(() => [
+  {
+    name: 'Zonnepanelen', type: 'solar', dbKey: 'solar_panel',
+    count: moduleStats.value.solar_panel.total,
+    monitored: moduleStats.value.solar_panel.monitored,
+    theme: getModuleTheme('solar'),
+  },
+  {
+    name: 'Warmtepomp', type: 'heat_pump', dbKey: 'heat_pump',
+    count: moduleStats.value.heat_pump.total,
+    monitored: moduleStats.value.heat_pump.monitored,
+    theme: getModuleTheme('heat_pump'),
+  },
+  {
+    name: 'Laadpaal', type: 'ev_charger', dbKey: 'ev_charger',
+    count: moduleStats.value.ev_charger.total,
+    monitored: moduleStats.value.ev_charger.monitored,
+    theme: getModuleTheme('ev_charger'),
+  },
+])
+
+const totalActiveModules = computed(() =>
+  Object.values(moduleStats.value).reduce((s, m) => s + m.total, 0)
+)
 </script>
 
 <template>
@@ -169,32 +258,34 @@ const moduleBreakdown = [
               Alle klanten &rarr;
             </NuxtLink>
           </div>
-          <div v-if="recentActivity.length === 0" class="py-8 text-center">
-            <AppIcon name="activity" :size="24" class="mx-auto text-gray-300 mb-2" />
-            <p class="text-sm text-gray-400">Activiteit verschijnt hier zodra klanten worden toegevoegd.</p>
+          <div v-if="activityLoading" class="py-8 text-center">
+            <div class="mx-auto h-5 w-5 animate-spin rounded-full border-2 border-gray-200 border-t-gray-500" />
           </div>
-          <div v-else class="space-y-4">
-            <div
+          <div v-else-if="recentActivity.length === 0" class="py-8 text-center">
+            <AppIcon name="activity" :size="24" class="mx-auto text-gray-300 mb-2" />
+            <p class="text-sm text-gray-400">Activiteit verschijnt hier zodra klanten worden toegevoegd of service-meldingen binnenkomen.</p>
+          </div>
+          <div v-else class="space-y-1">
+            <component
+              :is="item.link ? 'NuxtLink' : 'div'"
               v-for="item in recentActivity"
               :key="item.id"
-              class="flex items-start gap-3"
+              :to="item.link || undefined"
+              class="flex items-start gap-3 rounded-lg px-2 py-2 -mx-2 transition-colors"
+              :class="item.link ? 'hover:bg-gray-50 cursor-pointer no-underline' : ''"
             >
               <div
                 class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
-                :class="{
-                  'bg-green-50 text-green-600': item.type === 'activation',
-                  'bg-blue-50 text-blue-600': item.type === 'payment',
-                  'bg-gray-100 text-gray-500': item.type === 'customer',
-                  'bg-red-50 text-red-500': item.type === 'warning',
-                }"
+                :class="activityIconBg(item.type)"
               >
                 <AppIcon :name="item.icon" :size="15" />
               </div>
               <div class="flex-1 min-w-0">
-                <p class="text-sm text-gray-700">{{ item.text }}</p>
-                <p class="mt-0.5 text-xs text-gray-400">{{ item.time }}</p>
+                <p class="text-sm text-gray-700 truncate">{{ item.text }}</p>
+                <p class="mt-0.5 text-xs text-gray-400">{{ timeAgo(item.at) }}</p>
               </div>
-            </div>
+              <AppIcon v-if="item.link" name="chevron-right" :size="14" class="text-gray-300 mt-2 shrink-0" />
+            </component>
           </div>
         </div>
       </div>
@@ -222,13 +313,24 @@ const moduleBreakdown = [
                 >
                   <AppIcon :name="mod.theme.icon" :size="16" />
                 </div>
-                <span class="text-sm font-medium" :class="mod.theme.text">{{ mod.name }}</span>
+                <div>
+                  <p class="text-sm font-medium" :class="mod.theme.text">{{ mod.name }}</p>
+                  <p v-if="mod.monitored > 0 && mod.monitored < mod.count" class="text-[11px] opacity-70" :class="mod.theme.text">
+                    {{ mod.monitored }} met monitoring
+                  </p>
+                  <p v-else-if="mod.monitored > 0 && mod.monitored === mod.count" class="text-[11px] opacity-70" :class="mod.theme.text">
+                    Alle gekoppeld
+                  </p>
+                  <p v-else-if="mod.count > 0" class="text-[11px] opacity-70" :class="mod.theme.text">
+                    Nog niet gekoppeld
+                  </p>
+                </div>
               </div>
               <span
                 class="badge"
                 :class="mod.theme.bg + ' ' + mod.theme.text"
               >
-                {{ mod.count }} actief
+                {{ mod.count }}
               </span>
             </div>
           </div>

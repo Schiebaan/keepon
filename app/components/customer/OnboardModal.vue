@@ -37,6 +37,28 @@ const availableModules = [
   { type: 'ev_charger', label: 'Laadpaal', desc: 'Monitoring via Easee', icon: 'ev-charger' },
 ]
 
+// --- Speciale voorwaarden (default dicht) ---
+const showAdvanced = ref(false)
+const billingInterval = ref<'monthly' | 'yearly'>('monthly')
+const yearlyDiscountMonths = ref<number | null>(null)
+const trialMonths = ref<number | null>(null)
+// Per-module override: keyed op het UI-type ('solar', 'heat_pump', ...) — bij
+// submit map ik naar het DB-type ('solar_panel', etc.) in customers.post.ts.
+const overridePrice = ref<Record<string, number | null>>({})
+const overrideReason = ref<Record<string, string>>({})
+
+function priceEur(cents: number | null | undefined): string {
+  if (!cents) return ''
+  return (cents / 100).toFixed(2).replace('.', ',')
+}
+function parseEurInput(v: string): number | null {
+  if (!v || !v.trim()) return null
+  const cleaned = v.replace(/€/g, '').replace(/\s+/g, '').replace(',', '.')
+  const n = parseFloat(cleaned)
+  if (!Number.isFinite(n) || n < 0) return null
+  return Math.round(n * 100)
+}
+
 function toggleModule(type: string) {
   if (selectedModules.value.has(type)) {
     selectedModules.value.delete(type)
@@ -55,6 +77,9 @@ function close() {
   setTimeout(() => { resetForm() }, 300)
 }
 
+// Backdrop close that survives text-selection drags
+const { onMouseDown: onBackdropDown, onClick: onBackdropClick } = useBackdropClose(close)
+
 function resetForm() {
   form.value = { erp_project_id: '', full_name: '', email: '', phone: '', street: '', house_number: '', postal_code: '', city: '' }
   selectedModules.value = new Set()
@@ -63,6 +88,12 @@ function resetForm() {
   importLoading.value = false
   importError.value = ''
   inputMode.value = 'manual'
+  showAdvanced.value = false
+  billingInterval.value = 'monthly'
+  yearlyDiscountMonths.value = null
+  trialMonths.value = null
+  overridePrice.value = {}
+  overrideReason.value = {}
 }
 
 async function importFromErp() {
@@ -88,6 +119,20 @@ async function handleSubmit() {
   submitError.value = ''
 
   try {
+    // Bouw module-overrides — alleen voor modules die geselecteerd zijn én
+    // een prijs hebben gekregen
+    const overrides = [...selectedModules.value]
+      .map((m) => {
+        const cents = overridePrice.value[m]
+        if (!cents) return null
+        return {
+          module_type: m,
+          price_monthly_cents: cents,
+          reason: overrideReason.value[m] || undefined,
+        }
+      })
+      .filter(Boolean) as { module_type: string; price_monthly_cents: number; reason?: string }[]
+
     const customer = await createCustomer({
       email: form.value.email,
       full_name: form.value.full_name,
@@ -97,6 +142,10 @@ async function handleSubmit() {
       postal_code: form.value.postal_code || undefined,
       city: form.value.city || undefined,
       modules: [...selectedModules.value],
+      billing_interval: billingInterval.value,
+      yearly_discount_months: yearlyDiscountMonths.value || 0,
+      trial_months: trialMonths.value || 0,
+      module_price_overrides: overrides,
     })
 
     result.value = {
@@ -120,7 +169,8 @@ async function handleSubmit() {
       <div
         v-if="modelValue"
         class="fixed inset-0 z-50 flex items-center justify-center p-4"
-        @click.self="close"
+        @mousedown="onBackdropDown"
+        @click="onBackdropClick"
       >
         <div class="absolute inset-0 bg-black/30 backdrop-blur-sm" />
 
@@ -128,7 +178,7 @@ async function handleSubmit() {
           <!-- Header -->
           <div class="border-b border-gray-100 px-6 py-4">
             <div class="flex items-center justify-between">
-              <h3 class="text-lg font-semibold text-gray-900">Nieuwe klant toevoegen</h3>
+              <h3 class="text-lg font-semibold text-gray-900">Klant uitnodigen</h3>
               <button class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600" @click="close">
                 <AppIcon name="x" :size="18" />
               </button>
@@ -141,8 +191,8 @@ async function handleSubmit() {
               <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-50">
                 <AppIcon name="check-circle" :size="28" class="text-green-500" />
               </div>
-              <p class="mt-3 text-base font-semibold text-gray-900">{{ result.customer.full_name }} is aangemaakt!</p>
-              <p class="mt-1 text-sm text-gray-500">Welkomsmail verstuurd naar {{ result.customer.email }}</p>
+              <p class="mt-3 text-base font-semibold text-gray-900">{{ result.customer.full_name }} is uitgenodigd!</p>
+              <p class="mt-1 text-sm text-gray-500">Welkomstmail verstuurd naar {{ result.customer.email }}</p>
             </div>
 
             <!-- Next steps per module -->
@@ -177,14 +227,15 @@ async function handleSubmit() {
 
             <div class="flex justify-center gap-3">
               <button class="btn-secondary" @click="close">Sluiten</button>
-              <a
+              <NuxtLink
                 v-if="result.customer?.id"
-                :href="`/admin/customers/${result.customer.id}`"
+                :to="`/admin/customers/${result.customer.id}`"
                 class="btn-primary inline-flex items-center gap-2"
+                @click="close"
               >
                 <AppIcon name="folder" :size="14" />
                 Naar dossier
-              </a>
+              </NuxtLink>
             </div>
           </div>
 
@@ -344,6 +395,106 @@ async function handleSubmit() {
                   </button>
                 </div>
               </div>
+
+              <!-- Speciale voorwaarden — default dicht, expand voor afwijkende prijs / proefperiode / termijn -->
+              <div class="mt-5 rounded-xl border border-gray-200 bg-gray-50/60">
+                <button
+                  type="button"
+                  class="flex w-full items-center justify-between gap-2 px-4 py-3 text-left"
+                  @click="showAdvanced = !showAdvanced"
+                >
+                  <div class="flex items-center gap-2">
+                    <AppIcon name="settings" :size="14" class="text-gray-500" />
+                    <span class="text-sm font-medium text-gray-900">Speciale voorwaarden</span>
+                    <span class="text-xs text-gray-400">(optioneel)</span>
+                  </div>
+                  <AppIcon :name="showAdvanced ? 'chevron-up' : 'chevron-down'" :size="14" class="text-gray-400" />
+                </button>
+
+                <div v-if="showAdvanced" class="border-t border-gray-200 px-4 py-4 space-y-4 bg-white rounded-b-xl">
+                  <!-- Termijn -->
+                  <div>
+                    <label class="label">Standaard termijn</label>
+                    <div class="mt-1 grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        class="rounded-lg border-2 px-3 py-2 text-sm font-medium transition-colors"
+                        :class="billingInterval === 'monthly' ? 'border-gray-900 bg-gray-50 text-gray-900' : 'border-gray-200 text-gray-600 hover:bg-gray-50'"
+                        @click="billingInterval = 'monthly'"
+                      >Per maand</button>
+                      <button
+                        type="button"
+                        class="rounded-lg border-2 px-3 py-2 text-sm font-medium transition-colors"
+                        :class="billingInterval === 'yearly' ? 'border-gray-900 bg-gray-50 text-gray-900' : 'border-gray-200 text-gray-600 hover:bg-gray-50'"
+                        @click="billingInterval = 'yearly'"
+                      >Per jaar</button>
+                    </div>
+                    <p class="mt-1 text-[11px] text-gray-500">Klant kan dit zelf nog wisselen op de akkoordpagina.</p>
+                  </div>
+
+                  <!-- Jaarkorting -->
+                  <div>
+                    <label class="label">Korting bij jaarbetaling (maanden gratis)</label>
+                    <input
+                      v-model.number="yearlyDiscountMonths"
+                      type="number"
+                      min="0"
+                      max="12"
+                      step="0.5"
+                      class="input"
+                      placeholder="bv. 1"
+                    />
+                    <p class="mt-1 text-[11px] text-gray-500">Bv. 1 = 1 maand gratis bij jaarbetaling. 0 = geen korting.</p>
+                  </div>
+
+                  <!-- Proefperiode -->
+                  <div>
+                    <label class="label">Proefperiode (maanden gratis na incasso-activatie)</label>
+                    <input
+                      v-model.number="trialMonths"
+                      type="number"
+                      min="0"
+                      max="60"
+                      step="1"
+                      class="input"
+                      placeholder="bv. 3"
+                    />
+                    <p class="mt-1 text-[11px] text-gray-500">Klant ziet "Eerste 3 maanden gratis". Telt vanaf het moment dat de IBAN is afgegeven.</p>
+                  </div>
+
+                  <!-- Per-module afwijkend tarief -->
+                  <div v-if="selectedModules.size > 0">
+                    <label class="label">Afwijkend tarief per module (optioneel)</label>
+                    <p class="mt-1 mb-2 text-[11px] text-gray-500">Laat leeg om de standaardprijs van {{ partner.name }} aan te houden.</p>
+                    <div class="space-y-2">
+                      <div
+                        v-for="mod in availableModules.filter(m => selectedModules.has(m.type))"
+                        :key="mod.type"
+                        class="grid grid-cols-[1fr_auto_2fr] gap-2 items-center"
+                      >
+                        <span class="text-sm text-gray-700">{{ mod.label }}</span>
+                        <div class="relative">
+                          <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400">€</span>
+                          <input
+                            :value="overridePrice[mod.type] !== null && overridePrice[mod.type] !== undefined ? priceEur(overridePrice[mod.type]) : ''"
+                            type="text"
+                            class="input pl-6 w-24 text-sm tabular-nums"
+                            placeholder="—"
+                            @input="(e) => overridePrice[mod.type] = parseEurInput((e.target as HTMLInputElement).value)"
+                          />
+                        </div>
+                        <input
+                          v-model="overrideReason[mod.type]"
+                          type="text"
+                          class="input text-sm"
+                          placeholder="Reden (intern, optioneel)"
+                          maxlength="200"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <!-- Error -->
@@ -366,7 +517,7 @@ async function handleSubmit() {
                 >
                   <AppIcon v-if="!submitting" name="plus" :size="16" />
                   <span v-if="submitting" class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                  {{ submitting ? 'Bezig...' : 'Klant toevoegen' }}
+                  {{ submitting ? 'Bezig...' : 'Verstuur uitnodiging' }}
                 </button>
               </div>
             </div>

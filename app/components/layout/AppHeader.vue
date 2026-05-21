@@ -52,24 +52,23 @@ watch(() => route.fullPath, () => {
 <template>
   <header class="border-b bg-white" :style="{ borderBottomColor: `color-mix(in srgb, ${partner.primary_color} 30%, #e5e7eb)` }">
     <div class="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
-      <!-- Logo -->
+      <!-- Logo (of wordmark als er geen logo geüpload is) -->
       <NuxtLink to="/" class="flex items-center gap-3 no-underline">
+        <!-- Mét logo: alleen het logo — de partnernaam zit visueel al in het
+             logo zelf, een herhaling ernaast is dubbelop. -->
         <img
           v-if="partner.logo_url"
           :src="partner.logo_url"
           :alt="partner.name"
-          class="h-8 w-auto"
+          class="h-12 w-auto max-w-[240px] object-contain"
         />
-        <div
-          v-else
-          class="flex h-9 w-9 items-center justify-center rounded-lg text-sm font-bold text-white"
-          :style="{ backgroundColor: partner.primary_color }"
-        >
-          {{ partner.name.charAt(0) }}
-        </div>
-        <span class="text-lg font-semibold text-gray-900">
-          {{ partner.name }}
-        </span>
+        <!-- Zonder logo: wordmark-fallback met smal accent in partner-kleur. -->
+        <template v-else>
+          <span class="block h-7 w-[3px] shrink-0 rounded-full" :style="{ backgroundColor: partner.primary_color }" />
+          <span class="text-xl font-bold tracking-tight text-gray-900">
+            {{ partner.name }}
+          </span>
+        </template>
       </NuxtLink>
 
       <!-- Customer nav (desktop) -->
@@ -172,7 +171,7 @@ watch(() => route.fullPath, () => {
                 Facturen
               </NuxtLink>
               <NuxtLink
-                to="/klant/abonnementen"
+                to="/klant/contracten"
                 class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
                 @click="closeAccountMenu"
               >
@@ -283,7 +282,7 @@ watch(() => route.fullPath, () => {
           </NuxtLink>
 
           <NuxtLink
-            to="/klant/abonnementen"
+            to="/klant/contracten"
             class="flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-100"
           >
             <AppIcon name="document" :size="18" />

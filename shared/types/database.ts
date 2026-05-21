@@ -24,12 +24,24 @@ export interface Customer {
   full_name: string | null
   phone: string | null
   mollie_customer_id: string | null
+  mollie_mandate_id: string | null
   street: string | null
   house_number: string | null
   postal_code: string | null
   city: string | null
   created_at: string
   updated_at: string
+  // Enriched by GET /api/customers — not stored on the row itself
+  product_categories?: string[]
+  module_linkage?: Record<string, { has: number; linked: number }>
+  onboarding?: {
+    step?: string
+    accepted_at?: string | null
+    mandate_at?: string | null
+    mandate_skipped?: boolean
+    accepted_modules?: string[] | null
+  } | null
+  latest_batch?: { id: string; name: string; created_at: string } | null
 }
 
 export interface Installation {

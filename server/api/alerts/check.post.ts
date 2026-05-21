@@ -56,7 +56,7 @@ export default defineEventHandler(async (event) => {
       to: customer.email,
       subject: emailContent.subject,
       html: emailContent.html,
-      replyTo: partner?.support_email || undefined,
+      // Geen replyTo — alert-mail; opvolgen gaat via portaal.
     })
 
     if (result.success) alertsSent++

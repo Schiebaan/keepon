@@ -14,11 +14,19 @@ function getResend(): Resend | null {
 // Default sender - update when domain is verified in Resend
 const DEFAULT_FROM = process.env.RESEND_FROM_EMAIL || 'UPsol <onboarding@resend.dev>'
 
+/** Extract just the bare email address from "Name <email@domain>" */
+function getFromAddress(): string {
+  const f = process.env.RESEND_FROM_EMAIL || 'noreply@upsol.nl'
+  const m = f.match(/<([^>]+)>/)
+  return m ? m[1] : f
+}
+
 interface SendEmailOptions {
   to: string
   subject: string
   html: string
   from?: string
+  fromName?: string  // Display name to show in inbox, e.g. "Volt4U" — uses verified Resend domain
   replyTo?: string
 }
 
@@ -29,8 +37,15 @@ export async function sendEmail(options: SendEmailOptions) {
     return { success: false, reason: 'no_api_key' }
   }
 
+  // Compose the From header. If a partner name is provided, the inbox will show
+  // "Volt4U <noreply@upsol.nl>" — we keep the verified upsol.nl domain so Resend
+  // accepts the send, but the human-visible sender becomes the partner.
+  const from = options.from || (options.fromName
+    ? `${sanitizeFromName(options.fromName)} <${getFromAddress()}>`
+    : DEFAULT_FROM)
+
   const { data, error } = await resend.emails.send({
-    from: options.from || DEFAULT_FROM,
+    from,
     to: options.to,
     subject: options.subject,
     html: options.html,
@@ -44,6 +59,11 @@ export async function sendEmail(options: SendEmailOptions) {
 
   console.log('[email] Sent to:', options.to, 'id:', data?.id)
   return { success: true, id: data?.id }
+}
+
+/** Strip characters that could break the From header (quotes, angle brackets) */
+function sanitizeFromName(name: string): string {
+  return (name || '').replace(/["<>]/g, '').trim() || 'UPsol'
 }
 
 // ============================================================
@@ -97,52 +117,82 @@ function baseLayout(content: string, partner?: { name: string; primary_color: st
 </html>`
 }
 
-// ---- Welcome Email ----
+// ---- Welcome Email — service proposal invite ----
 interface WelcomeEmailData {
   customerName: string
   customerEmail: string
-  onboardingUrl: string
-  moduleName: string
-  partner?: { name: string; primary_color: string; logo_url?: string; support_email?: string }
+  onboardingUrl: string                 // magic link → /welkom (proposal flow)
+  moduleName: string                    // "Zonnepanelen & Warmtepomp"
+  modules?: string[]                    // ['solar', 'heat_pump'] — for tailored copy
+  partner?: { name: string; primary_color: string; logo_url?: string; support_email?: string; support_phone?: string }
+}
+
+const MODULE_INVITE_LINE: Record<string, string> = {
+  solar:      'Direct inzicht in je opbrengst en een seintje bij storingen.',
+  heat_pump:  'We houden je warmtepomp in de gaten, zonder koude verrassingen.',
+  ev_charger: 'Overzicht van je laadsessies en kosten op één plek.',
+  battery:    'Inzicht in je laad- en ontlaadcycli en de gezondheid van je batterij.',
+}
+
+const MODULE_LOWER: Record<string, string> = {
+  solar: 'zonnepanelen', heat_pump: 'warmtepomp', ev_charger: 'laadpaal', battery: 'thuisbatterij',
+}
+
+/** Join module labels Dutch-style: ["solar","ev_charger"] → "zonnepanelen en laadpaal" */
+function joinModulesNl(modules: string[] | undefined): string {
+  const parts = (modules || []).map(m => MODULE_LOWER[m]).filter(Boolean)
+  if (parts.length === 0) return 'installatie'
+  if (parts.length === 1) return parts[0]
+  return parts.slice(0, -1).join(', ') + ' en ' + parts[parts.length - 1]
 }
 
 export function buildWelcomeEmail(data: WelcomeEmailData) {
-  const firstName = data.customerName.split(' ')[0]
+  const firstName = (data.customerName || '').split(' ')[0] || 'daar'
   const partnerName = data.partner?.name || 'je installateur'
 
+  // Build a "what's in the proposal" list — one bullet per active module
+  const moduleBullets = (data.modules || [])
+    .map(m => MODULE_INVITE_LINE[m])
+    .filter(Boolean)
+    .map(line => `<li style="padding:6px 0; font-size:14px; color:#374151;">${line}</li>`)
+    .join('')
+
+  const bulletsBlock = moduleBullets
+    ? `<ul style="list-style:none; padding:0; margin:16px 0 24px;">${moduleBullets}</ul>`
+    : ''
+
   const content = `
-    <h1>Welkom, ${firstName}!</h1>
+    <h1>Hoi ${firstName},</h1>
     <p>
-      ${partnerName} heeft een account voor je aangemaakt.
-      Via je persoonlijke portaal kun je de status van je systeem volgen.
+      ${partnerName} heeft een service-voorstel voor je klaargezet voor je
+      ${data.moduleName ? data.moduleName.toLowerCase() : 'installatie'}.
+      Bekijk het op een rustig moment. Het kost je 2 minuten.
     </p>
 
-    <div class="highlight">
-      <p class="highlight-label">Jouw systeem</p>
-      <p class="highlight-value">${data.moduleName}</p>
-    </div>
-
-    <p>
-      Klik op de knop hieronder om direct in te loggen. Na het inloggen kun je een eigen wachtwoord instellen.
-    </p>
+    ${bulletsBlock}
 
     <p style="text-align:center; margin: 28px 0;">
-      <a href="${data.onboardingUrl}" class="btn">Direct inloggen</a>
+      <a href="${data.onboardingUrl}" class="btn">Bekijk mijn voorstel</a>
     </p>
 
-    <p style="font-size:13px; color:#6b7280;">
-      Deze link is 24 uur geldig. Daarna kun je inloggen via de "Magic link" optie op de loginpagina.
+    <p style="font-size:13px; color:#6b7280; text-align:center;">
+      Geen wachtwoord nodig. De knop logt je automatisch in.
     </p>
 
     <hr class="divider">
 
-    <p style="font-size:13px; color:#9ca3af;">
-      Als je deze email niet verwacht, kun je hem negeren.
-      ${data.partner?.support_email ? `Vragen? Mail naar <a href="mailto:${data.partner.support_email}" style="color:${data.partner?.primary_color || '#2563eb'}">${data.partner.support_email}</a>` : ''}
+    <p style="font-size:13px; color:#9ca3af; line-height:1.6;">
+      Vragen? ${data.partner?.support_phone ? `Bel ${partnerName} op <a href="tel:${data.partner.support_phone}" style="color:${data.partner?.primary_color || '#2563eb'}">${data.partner.support_phone}</a>` : ''}${data.partner?.support_phone && data.partner?.support_email ? ' of ' : ''}${data.partner?.support_email ? `mail <a href="mailto:${data.partner.support_email}" style="color:${data.partner?.primary_color || '#2563eb'}">${data.partner.support_email}</a>` : ''}.
+      <br/>
+      Niet verwacht? Negeer deze mail. Er gebeurt niets zonder jouw akkoord.
     </p>`
 
+  const subject = data.modules && data.modules.length > 0
+    ? `${partnerName}: zet de service voor je ${joinModulesNl(data.modules)} aan`
+    : `${partnerName}: zet je service eenvoudig aan`
+
   return {
-    subject: `Welkom bij ${partnerName} — je portaal staat klaar`,
+    subject,
     html: baseLayout(content, data.partner),
   }
 }
@@ -224,6 +274,208 @@ export function buildActivationConfirmEmail(data: ActivationEmailData) {
   }
 }
 
+// ---- Ticket reply notification (to customer) ----
+interface TicketReplyEmailData {
+  customerName: string
+  ticketSubject: string
+  ticketRef?: string            // human-friendly id like "T-007"
+  replyExcerpt: string          // first ~200 chars of the reply
+  ticketUrl: string             // deep link to /klant/service
+  authorName?: string | null    // who at the partner replied — voornaam genoeg
+  partner?: { name: string; primary_color: string; logo_url?: string; support_email?: string }
+}
+
+export function buildTicketReplyEmail(data: TicketReplyEmailData) {
+  const firstName = (data.customerName || '').split(' ')[0] || 'daar'
+  const partnerName = data.partner?.name || 'je installateur'
+  const author = (data.authorName || '').trim()
+  // "Rik van Volt4U" vs "Volt4U" — afhankelijk van of de naam bekend is
+  const senderLabel = author ? `${author} van ${partnerName}` : partnerName
+  const excerpt = (data.replyExcerpt || '').trim().slice(0, 240)
+
+  const refLine = data.ticketRef
+    ? `<p class="highlight-label">Onderwerp · Ticket ${escapeHtml(data.ticketRef)}</p>`
+    : `<p class="highlight-label">Onderwerp</p>`
+
+  const content = `
+    <h1>${escapeHtml(senderLabel)} heeft gereageerd</h1>
+    <p>Hoi ${firstName}, er is een nieuwe reactie op je servicemelding.</p>
+
+    <div class="highlight">
+      ${refLine}
+      <p class="highlight-value">${escapeHtml(data.ticketSubject)}</p>
+    </div>
+
+    <p style="margin-bottom:24px;">
+      <em style="color:#6b7280;">"${escapeHtml(excerpt)}${excerpt.length >= 240 ? '…' : ''}"</em>
+    </p>
+
+    <p style="text-align:center; margin: 28px 0;">
+      <a href="${data.ticketUrl}" class="btn">Open je ticket en reageer</a>
+    </p>
+
+    <hr class="divider">
+    <p style="font-size:13px; color:#9ca3af; line-height:1.55;">
+      <strong style="color:#6b7280;">Reageer via het portaal</strong>, niet via deze mail.
+      Daar zie je de volledige geschiedenis en komt je bericht direct bij
+      ${escapeHtml(partnerName)} aan. Antwoorden op deze mail worden niet
+      automatisch aan je ticket toegevoegd.
+    </p>`
+
+  const subject = data.ticketRef
+    ? `${senderLabel} heeft gereageerd op ticket ${data.ticketRef}: ${data.ticketSubject}`
+    : `${senderLabel} heeft gereageerd op je melding`
+
+  return {
+    subject,
+    html: baseLayout(content, data.partner),
+  }
+}
+
+// ---- New ticket notification (to installer / partner support inbox) ----
+interface NewTicketEmailData {
+  customerName: string
+  customerEmail: string
+  ticketSubject: string
+  ticketRef?: string
+  ticketDescription: string | null
+  urgency: string
+  moduleLabel: string | null
+  ticketUrl: string             // /admin/service/[id]
+  partner?: { name: string; primary_color: string; logo_url?: string }
+}
+
+export function buildNewTicketInstallerEmail(data: NewTicketEmailData) {
+  const partnerName = data.partner?.name || 'UPsol'
+  const urgencyBadge = data.urgency === 'hoog'
+    ? '<span style="display:inline-block; padding:2px 8px; border-radius:10px; background:#fef2f2; color:#b91c1c; font-size:11px; font-weight:600; margin-left:6px;">URGENT</span>'
+    : ''
+
+  const description = data.ticketDescription
+    ? `<div class="highlight"><p class="highlight-label">Toelichting</p><p style="margin:0; font-size:14px; white-space:pre-line; color:#374151;">${escapeHtml(data.ticketDescription)}</p></div>`
+    : ''
+
+  const content = `
+    <h1>Nieuwe servicemelding ${urgencyBadge}</h1>
+    <p>${escapeHtml(data.customerName)} heeft zojuist een melding ingediend in het klantportaal.</p>
+
+    <div class="highlight">
+      <p class="highlight-label">Van</p>
+      <p class="highlight-value">${escapeHtml(data.customerName)} · ${escapeHtml(data.customerEmail)}</p>
+    </div>
+    <div class="highlight">
+      <p class="highlight-label">Onderwerp${data.moduleLabel ? ` · ${escapeHtml(data.moduleLabel)}` : ''}</p>
+      <p class="highlight-value">${escapeHtml(data.ticketSubject)}</p>
+    </div>
+    ${description}
+
+    <p style="text-align:center; margin: 28px 0;">
+      <a href="${data.ticketUrl}" class="btn">Open ticket</a>
+    </p>
+
+    <hr class="divider">
+    <p style="font-size:13px; color:#9ca3af;">
+      Deze melding staat klaar in ${partnerName} → Service. Reageer vanuit het portaal zodat de klant je antwoord direct terugziet.
+    </p>`
+
+  const subject = data.ticketRef
+    ? `${data.urgency === 'hoog' ? '[URGENT] ' : ''}Ticket ${data.ticketRef}: ${data.ticketSubject}`
+    : `${data.urgency === 'hoog' ? '[URGENT] ' : ''}Nieuwe servicemelding: ${data.ticketSubject}`
+
+  return {
+    subject,
+    html: baseLayout(content, data.partner),
+  }
+}
+
+// ---- Installation connected (one-shot) ----
+interface InstallationConnectedEmailData {
+  customerName: string
+  installationLabel: string     // e.g. "Zonnepanelen" or "Zonnepanelen — 8,4 kWp"
+  dashboardUrl: string          // link to /klant/zonnepanelen or /klant
+  partner?: { name: string; primary_color: string; logo_url?: string; support_email?: string }
+}
+
+export function buildInstallationConnectedEmail(data: InstallationConnectedEmailData) {
+  const firstName = (data.customerName || '').split(' ')[0] || 'daar'
+  const partnerName = data.partner?.name || 'je installateur'
+
+  const content = `
+    <h1>Je installatie is gekoppeld! 🎉</h1>
+    <p>
+      Hoi ${firstName}, ${partnerName} heeft zojuist je ${escapeHtml(data.installationLabel)} gekoppeld
+      aan het monitoringplatform. Je ziet live gegevens zodra de eerste data binnenkomt (meestal binnen 24 uur).
+    </p>
+
+    <div class="highlight">
+      <p class="highlight-label">Gekoppeld</p>
+      <p class="highlight-value">${escapeHtml(data.installationLabel)}</p>
+    </div>
+
+    <p style="text-align:center; margin: 28px 0;">
+      <a href="${data.dashboardUrl}" class="btn">Bekijk mijn dashboard</a>
+    </p>
+
+    <hr class="divider">
+    <p style="font-size:13px; color:#9ca3af;">
+      ${data.partner?.support_email ? `Vragen over de koppeling? Mail ${data.partner.support_email}` : ''}
+    </p>`
+
+  return {
+    subject: `Je installatie bij ${partnerName} is live`,
+    html: baseLayout(content, data.partner),
+  }
+}
+
+// ---- Password changed confirmation ----
+interface PasswordChangedEmailData {
+  customerName: string
+  changedAt: Date
+  partner?: { name: string; primary_color: string; logo_url?: string; support_email?: string }
+}
+
+export function buildPasswordChangedEmail(data: PasswordChangedEmailData) {
+  const firstName = (data.customerName || '').split(' ')[0] || 'daar'
+  const partnerName = data.partner?.name || 'je installateur'
+  const when = data.changedAt.toLocaleString('nl-NL', {
+    day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  })
+
+  const content = `
+    <h1>Je wachtwoord is gewijzigd</h1>
+    <p>Hoi ${firstName}, we willen je laten weten dat je wachtwoord zojuist is aangepast op je ${partnerName}-account.</p>
+
+    <div class="highlight">
+      <p class="highlight-label">Tijdstip</p>
+      <p class="highlight-value">${when}</p>
+    </div>
+
+    <p style="margin-top:20px; font-size:14px; color:#b91c1c;">
+      <strong>Herken je dit niet?</strong> Neem direct contact op met ${partnerName}${data.partner?.support_email ? ` via <a href="mailto:${data.partner.support_email}" style="color:#b91c1c;">${data.partner.support_email}</a>` : ''}
+      om je account te beveiligen.
+    </p>
+
+    <hr class="divider">
+    <p style="font-size:13px; color:#9ca3af;">
+      Dit is een automatische bevestiging om misbruik te voorkomen. Je hoeft niets te doen als je dit zelf hebt gedaan.
+    </p>`
+
+  return {
+    subject: `Je wachtwoord bij ${partnerName} is gewijzigd`,
+    html: baseLayout(content, data.partner),
+  }
+}
+
+// ---- HTML escape helper ----
+function escapeHtml(s: string): string {
+  return (s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 // ---- Module type to Dutch label ----
 export function moduleTypeLabel(type: string): string {
   const labels: Record<string, string> = {
@@ -252,11 +504,11 @@ function replacePlaceholders(text: string, data: CustomTemplateData): string {
   const firstName = data.customerName.split(' ')[0]
   const partnerName = data.partner?.name || 'UPsol'
   return text
-    .replace(/\{\{voornaam\}\}/g, firstName)
-    .replace(/\{\{naam\}\}/g, data.customerName)
-    .replace(/\{\{email\}\}/g, data.customerEmail || '')
-    .replace(/\{\{bedrijfsnaam\}\}/g, partnerName)
-    .replace(/\{\{module\}\}/g, data.moduleName || '')
+    .replace(/\{\{voornaam\}\}/g, escapeHtml(firstName))
+    .replace(/\{\{naam\}\}/g, escapeHtml(data.customerName))
+    .replace(/\{\{email\}\}/g, escapeHtml(data.customerEmail || ''))
+    .replace(/\{\{bedrijfsnaam\}\}/g, escapeHtml(partnerName))
+    .replace(/\{\{module\}\}/g, escapeHtml(data.moduleName || ''))
 }
 
 export function buildFromCustomTemplate(data: CustomTemplateData) {
@@ -299,4 +551,97 @@ export async function getPartnerTemplate(
     .single()
 
   return data || null
+}
+
+// ---- Mandate confirmation + reminder series ----
+//
+// Drie momenten in één bouwer omdat ze 90% layout delen en alleen verschillen
+// in toon: de bevestiging direct na akkoord, een vriendelijke herinnering na
+// 3 dagen, en een laatste waarschuwing na 10 dagen ("geen incasso = geen
+// service"). De mandaat-CTA wijst altijd naar /welkom/incasso.
+
+interface MandateMailData {
+  kind: 'confirm' | 'day3' | 'day10'
+  customerName: string
+  acceptedModuleLabels: string[]   // bv. ['Zonnepanelen', 'Warmtepomp'] — gebruikt als korte recap
+  totalMonthlyEuros?: string | null // bv. "47,50" — optioneel, alleen ter info
+  incassoUrl: string               // deep link naar https://<slug>.upsol.nl/welkom/incasso
+  partner?: { name: string; primary_color: string; logo_url?: string; support_email?: string }
+}
+
+export function buildMandateMail(data: MandateMailData) {
+  const firstName = (data.customerName || '').split(' ')[0] || 'daar'
+  const partnerName = data.partner?.name || 'je installateur'
+  const modulesLine = data.acceptedModuleLabels.length
+    ? data.acceptedModuleLabels.join(' + ')
+    : 'je servicecontract'
+
+  let h1: string
+  let intro: string
+  let body: string
+  let ctaLabel: string
+  let subject: string
+  let postscript: string
+
+  if (data.kind === 'confirm') {
+    h1 = 'Bedankt voor je akkoord!'
+    intro = `Hoi ${firstName}, fijn dat je hebt gekozen voor ${partnerName}. Je servicecontract is bevestigd.`
+    body = `
+      <p>Eén stap te gaan: zet de automatische incasso aan. Dat is een korte stap waarin we
+      via je IBAN het maandelijkse servicebedrag${data.totalMonthlyEuros ? ` van € ${escapeHtml(data.totalMonthlyEuros)}` : ''}
+      veilig kunnen afschrijven.</p>`
+    ctaLabel = 'Incasso instellen'
+    subject = `Akkoord bevestigd — regel nog je incasso bij ${partnerName}`
+    postscript = `Eenmaal afgegeven hoef je hier niets meer aan te doen. Bedankt!`
+  } else if (data.kind === 'day3') {
+    h1 = 'Vergeet je incasso niet'
+    intro = `Hoi ${firstName}, klein duwtje: je incasso voor ${partnerName} is nog niet afgegeven.`
+    body = `
+      <p>Zonder automatische incasso kunnen we je servicecontract voor ${escapeHtml(modulesLine)}
+      nog niet volledig activeren. Het duurt ongeveer een halve minuut:
+      je IBAN en de tenaamstelling — dat is alles.</p>`
+    ctaLabel = 'Nu incasso instellen'
+    subject = `Reminder: zet je incasso bij ${partnerName} aan`
+    postscript = `Heb je dit per ongeluk al gedaan? Negeer deze mail dan.`
+  } else {
+    // day10
+    h1 = 'Laatste herinnering — incasso nog niet afgegeven'
+    intro = `Hoi ${firstName}, je servicecontract bij ${partnerName} loopt al ruim een week, maar er is nog steeds geen incasso ingesteld.`
+    body = `
+      <p><strong>Let op:</strong> zonder een actieve automatische incasso kunnen wij geen
+      service leveren op ${escapeHtml(modulesLine)}. Geef nu je IBAN af zodat we je
+      installatie kunnen blijven monitoren en je bij storingen direct kunnen helpen.</p>
+      <p>Heb je vragen of komt het ergens niet uit? Reageer op deze mail of neem contact op
+      met ${partnerName}.</p>`
+    ctaLabel = 'Incasso direct instellen'
+    subject = `Laatste herinnering: incasso bij ${partnerName} nog niet aan`
+    postscript = `Dit is onze laatste automatische herinnering. Reageer alsjeblieft binnen een paar dagen.`
+  }
+
+  const summary = data.acceptedModuleLabels.length
+    ? `
+      <div class="highlight">
+        <p class="highlight-label">Servicecontract</p>
+        <p class="highlight-value">${escapeHtml(modulesLine)}</p>
+        ${data.totalMonthlyEuros ? `<p style="margin:4px 0 0; font-size:13px; color:#6b7280;">€ ${escapeHtml(data.totalMonthlyEuros)} per maand</p>` : ''}
+      </div>`
+    : ''
+
+  const content = `
+    <h1>${h1}</h1>
+    <p>${intro}</p>
+    ${summary}
+    ${body}
+    <p style="text-align:center; margin: 28px 0;">
+      <a href="${data.incassoUrl}" class="btn">${ctaLabel}</a>
+    </p>
+    <hr class="divider">
+    <p style="font-size:13px; color:#9ca3af;">
+      ${postscript}${data.partner?.support_email ? ` Vragen? Mail <a href="mailto:${data.partner.support_email}" style="color:${data.partner?.primary_color || '#2563eb'}">${data.partner.support_email}</a>.` : ''}
+    </p>`
+
+  return {
+    subject,
+    html: baseLayout(content, data.partner),
+  }
 }

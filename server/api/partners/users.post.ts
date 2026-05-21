@@ -7,6 +7,7 @@ export default defineEventHandler(async (event) => {
 
   const { email, partner_id } = body
   if (!email) throw createError({ statusCode: 400, message: 'E-mailadres is verplicht' })
+  const fullName = typeof body.full_name === 'string' ? body.full_name.trim().slice(0, 80) : ''
 
   // Determine partner
   const { data: role } = await supabase
@@ -62,6 +63,7 @@ export default defineEventHandler(async (event) => {
     user_id: authUserId,
     partner_id: partnerId,
     role: 'partner_admin',
+    full_name: fullName || null,
   }, { onConflict: 'user_id' })
 
   if (roleError) throw createError({ statusCode: 500, message: roleError.message })
@@ -81,7 +83,7 @@ export default defineEventHandler(async (event) => {
     const { subject, html } = buildFromCustomTemplate({
       subject: `Je hebt toegang tot het ${partnerData.name} portaal`,
       heading: 'Welkom als beheerder!',
-      body: `Je hebt een account gekregen voor het ${partnerData.name} beheerportaal. Log in met je e-mailadres en het tijdelijke wachtwoord dat je van je collega hebt ontvangen. Wijzig je wachtwoord na het eerste inloggen.`,
+      body: `Je hebt een account gekregen voor het ${partnerData.name} beheerportaal. Je ontvangt je tijdelijke wachtwoord in een aparte mail. Wijzig je wachtwoord na het eerste inloggen via Instellingen.`,
       buttonText: 'Inloggen',
       buttonUrl: loginUrl,
       customerName: email.split('@')[0],
@@ -90,6 +92,20 @@ export default defineEventHandler(async (event) => {
     })
 
     await sendEmail({ to: email, subject, html }).catch(() => {})
+
+    // Send separate email with temporary password
+    const { subject: pwSubject, html: pwHtml } = buildFromCustomTemplate({
+      subject: `Je tijdelijke wachtwoord voor ${partnerData.name}`,
+      heading: 'Je tijdelijke wachtwoord',
+      body: `Gebruik onderstaand wachtwoord om in te loggen. Wijzig het daarna via Instellingen → Wachtwoord wijzigen.\n\nWachtwoord: ${tempPassword}`,
+      buttonText: 'Inloggen',
+      buttonUrl: loginUrl,
+      customerName: email.split('@')[0],
+      customerEmail: email,
+      partner: partnerData || undefined,
+    })
+
+    await sendEmail({ to: email, subject: pwSubject, html: pwHtml }).catch(() => {})
   }
 
   return {

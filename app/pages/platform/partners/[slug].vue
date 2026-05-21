@@ -110,10 +110,10 @@ onMounted(async () => {
       <!-- Info -->
       <div class="section">
         <p class="text-xs text-gray-400">
-          Logo, kleuren en voorwaarden worden door de partner zelf beheerd via hun instellingen op
-          <a :href="`https://${partner.slug}.upsol.nl/admin/settings`" target="_blank" class="text-blue-600 hover:underline">
-            {{ partner.slug }}.upsol.nl/admin/settings
-          </a>
+          Logo, kleuren, voorwaarden, Sundata credentials en beschikbare merken worden door de partner zelf beheerd. De wizard haalt automatisch de geactiveerde omvormer-merken op uit het Sundata-account van deze partner.
+        </p>
+        <p class="mt-2 text-xs text-gray-400">
+          Open partnerinstellingen: <a :href="`https://${partner.slug}.upsol.nl/admin/settings`" target="_blank" class="text-blue-600 hover:underline">{{ partner.slug }}.upsol.nl/admin/settings</a>
         </p>
       </div>
     </template>

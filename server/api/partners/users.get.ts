@@ -26,20 +26,26 @@ export default defineEventHandler(async (event) => {
   // Get all users with partner_admin role for this partner
   const { data: roles } = await supabase
     .from('user_roles')
-    .select('user_id, role, created_at')
+    .select('user_id, role, full_name, created_at')
     .eq('partner_id', partnerId)
     .eq('role', 'partner_admin')
 
   if (!roles?.length) return []
 
-  // Get auth user details
+  // Get auth user details + derive a clean display name when full_name is null
+  const { deriveNameFromEmail } = await import('~~/server/utils/admin-name')
   const users = []
   for (const r of roles) {
     const { data: { user: authUser } } = await supabase.auth.admin.getUserById(r.user_id)
     if (authUser) {
+      const metaName = (authUser.user_metadata as any)?.full_name
+        || (authUser.user_metadata as any)?.name
+        || null
       users.push({
         id: r.user_id,
         email: authUser.email,
+        full_name: r.full_name || metaName || null,
+        display_name: r.full_name || metaName || deriveNameFromEmail(authUser.email || ''),
         created_at: r.created_at,
         last_sign_in: authUser.last_sign_in_at,
       })

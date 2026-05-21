@@ -25,12 +25,38 @@ const form = ref({
 
 const categories: { value: ProductCategory; label: string }[] = [
   { value: 'solar_panel', label: 'Zonnepanelen' },
-  { value: 'inverter', label: 'Omvormer' },
   { value: 'heat_pump', label: 'Warmtepomp' },
   { value: 'ev_charger', label: 'Laadpaal' },
   { value: 'battery', label: 'Batterij' },
   { value: 'other', label: 'Overig' },
 ]
+
+// Per-category defaults + placeholder hints. For heat pump / ev_charger we
+// only support one brand each on the platform today, so we pre-fill them.
+// Solar has many brands (Longi/JA/Trina/...) so we just hint via placeholder.
+const CATEGORY_DEFAULTS: Record<string, { brand: string; model: string; brandPlaceholder: string; modelPlaceholder: string }> = {
+  solar_panel: { brand: '',       model: '',       brandPlaceholder: 'Bijv. Longi', modelPlaceholder: 'Bijv. Hi-MO 6 480Wp' },
+  heat_pump:   { brand: 'Weheat', model: 'ATLAS',  brandPlaceholder: 'Weheat',      modelPlaceholder: 'ATLAS' },
+  ev_charger:  { brand: 'Easee',  model: 'Home',   brandPlaceholder: 'Easee',       modelPlaceholder: 'Home' },
+  battery:     { brand: '',       model: '',       brandPlaceholder: 'Bijv. Tesla', modelPlaceholder: 'Bijv. Powerwall 3' },
+  other:       { brand: '',       model: '',       brandPlaceholder: 'Merk',        modelPlaceholder: 'Model' },
+}
+const defaultsForCategory = computed(() => CATEGORY_DEFAULTS[form.value.category] || CATEGORY_DEFAULTS.other)
+
+// When the user switches category in the form, fill in defaults — but only
+// if the field is currently empty OR contains the default for the previous
+// category (so we don't clobber a typed value).
+let previousCategoryDefaults = CATEGORY_DEFAULTS.solar_panel
+watch(() => form.value.category, (newCat) => {
+  const next = CATEGORY_DEFAULTS[newCat] || CATEGORY_DEFAULTS.other
+  if (!form.value.brand || form.value.brand === previousCategoryDefaults.brand) {
+    form.value.brand = next.brand
+  }
+  if (!form.value.model || form.value.model === previousCategoryDefaults.model) {
+    form.value.model = next.model
+  }
+  previousCategoryDefaults = next
+})
 
 const orientationOptions = [
   { value: 'north', label: 'Noord' },
@@ -59,10 +85,13 @@ watch(() => props.modelValue, (open) => {
       installation_date: props.editProduct.installation_date || '',
       notes: (props.editProduct.notes || '').replace(/\d+\s*Wp.*?(·|$)/, '').trim(),
     }
+    previousCategoryDefaults = CATEGORY_DEFAULTS[form.value.category] || CATEGORY_DEFAULTS.other
   } else if (open) {
     resetForm()
   }
 })
+
+const { onMouseDown: onBackdropDown, onClick: onBackdropClick } = useBackdropClose(() => close())
 
 function close() {
   emit('update:modelValue', false)
@@ -70,11 +99,21 @@ function close() {
 }
 
 function resetForm() {
-  form.value = { category: 'solar_panel', brand: '', model: '', name: '', capacity_wp: '', orientation: '', tilt: '', installation_date: '', notes: '' }
+  const defaults = CATEGORY_DEFAULTS.solar_panel
+  form.value = { category: 'solar_panel', brand: defaults.brand, model: defaults.model, name: '', capacity_wp: '', orientation: '', tilt: '', installation_date: '', notes: '' }
+  previousCategoryDefaults = defaults
 }
 
 function handleSubmit() {
   if (!form.value.brand) return
+
+  // For solar panels, require installation details
+  if (isSolar.value) {
+    if (!form.value.capacity_wp || !form.value.orientation || !form.value.tilt) {
+      alert('Vul Vermogen, Oriëntatie en Helling in — dit is nodig voor de Sundata koppeling.')
+      return
+    }
+  }
 
   const productName = form.value.name || `${form.value.brand} ${form.value.model}`.trim()
 
@@ -104,7 +143,7 @@ function handleSubmit() {
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="modelValue" class="fixed inset-0 z-50 flex items-center justify-center p-4" @click.self="close">
+      <div v-if="modelValue" class="fixed inset-0 z-50 flex items-center justify-center p-4" @mousedown="onBackdropDown" @click="onBackdropClick">
         <div class="absolute inset-0 bg-black/30 backdrop-blur-sm" />
         <div class="relative w-full max-w-lg rounded-2xl bg-white shadow-xl overflow-hidden">
           <div class="border-b border-gray-100 px-6 py-4">
@@ -127,11 +166,11 @@ function handleSubmit() {
             <div class="grid grid-cols-2 gap-3">
               <div>
                 <label class="label">Merk <span class="text-red-400">*</span></label>
-                <input v-model="form.brand" type="text" class="input" placeholder="Bijv. Longi" required>
+                <input v-model="form.brand" type="text" class="input" :placeholder="defaultsForCategory.brandPlaceholder" required>
               </div>
               <div>
                 <label class="label">Model</label>
-                <input v-model="form.model" type="text" class="input" placeholder="Bijv. Hi-MO 6 480Wp">
+                <input v-model="form.model" type="text" class="input" :placeholder="defaultsForCategory.modelPlaceholder">
               </div>
             </div>
 
@@ -143,22 +182,22 @@ function handleSubmit() {
             <!-- Solar-specific fields -->
             <template v-if="isSolar">
               <div class="border-t border-gray-100 pt-3">
-                <p class="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">Installatie details</p>
+                <p class="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">Installatie details — nodig voor Sundata koppeling</p>
                 <div class="grid grid-cols-3 gap-3">
                   <div>
-                    <label class="label">Vermogen (Wp)</label>
-                    <input v-model="form.capacity_wp" type="number" step="1" class="input" placeholder="8400">
+                    <label class="label">Vermogen (Wp) <span class="text-red-400">*</span></label>
+                    <input v-model="form.capacity_wp" type="number" step="1" class="input" placeholder="8400" required>
                   </div>
                   <div>
-                    <label class="label">Oriëntatie</label>
-                    <select v-model="form.orientation" class="input">
+                    <label class="label">Oriëntatie <span class="text-red-400">*</span></label>
+                    <select v-model="form.orientation" class="input" required>
                       <option value="">Kies...</option>
                       <option v-for="o in orientationOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
                     </select>
                   </div>
                   <div>
-                    <label class="label">Helling (°)</label>
-                    <input v-model="form.tilt" type="number" step="1" min="0" max="90" class="input" placeholder="35">
+                    <label class="label">Helling (°) <span class="text-red-400">*</span></label>
+                    <input v-model="form.tilt" type="number" step="1" min="0" max="90" class="input" placeholder="35" required>
                   </div>
                 </div>
               </div>

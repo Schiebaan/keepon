@@ -58,20 +58,12 @@ const orientationOptions = [
 const createResult = ref<any>(null)
 const verifyResult = ref<any>(null)
 
-// Common field labels
-const fieldLabels: Record<string, string> = {
-  serial_number: 'Serienummer',
-  api_key: 'API Key',
-  site_id: 'Site ID',
-  system_id: 'System ID',
-  plant_id: 'Plant ID',
-  device_sn: 'Device serienummer',
-  username: 'Gebruikersnaam',
-  password: 'Wachtwoord',
-  account: 'Account',
-  postcode: 'Postcode',
-  meter_id: 'Meter ID (laatste 6 cijfers)',
-}
+// Track plant_id across retries so we don't duplicate the plant when meter creation fails
+const existingPlantId = ref<number | null>(null)
+const existingCompanyId = ref<number | null>(null)
+
+// Prevent double-submit of the Koppelen button (avoids accidental duplicate meter calls)
+const isSubmitting = ref(false)
 
 const filteredDrivers = computed(() => {
   if (!searchBrand.value) return drivers.value
@@ -107,19 +99,25 @@ function reset() {
   selectedDriver.value = null
   searchBrand.value = ''
   plantName.value = props.customerName || ''
-  capacityWp.value = ''
-  orientation.value = ''
-  tilt.value = ''
+  // Pre-fill installation details from the product record if available;
+  // otherwise the user fills them in directly in the wizard.
+  capacityWp.value = props.productData?.capacityWp || ''
+  orientation.value = props.productData?.orientation || ''
+  tilt.value = props.productData?.tilt || ''
   driverCredentials.value = {}
   createResult.value = null
   verifyResult.value = null
+  existingPlantId.value = null
+  existingCompanyId.value = null
 }
 
 function selectDriver(driver: any) {
   selectedDriver.value = driver
   driverCredentials.value = {}
-  ;(driver.fields || []).forEach((f: string) => {
-    driverCredentials.value[f] = ''
+  // Fields can be strings (old format) OR objects {name, label} (new format)
+  ;(driver.fields || []).forEach((f: any) => {
+    const fieldName = typeof f === 'string' ? f : f.name
+    driverCredentials.value[fieldName] = ''
   })
   step.value = 'credentials'
 }
@@ -129,50 +127,104 @@ function goBack() {
 }
 
 async function createPlant() {
-  if (!plantName.value) return
+  if (isSubmitting.value) return // hard guard against double-submit
+  errorMessage.value = ''
+
+  if (!plantName.value.trim()) {
+    errorMessage.value = 'Vul een naam voor de installatie in.'
+    return
+  }
+
+  // Validate all credential fields are filled
+  const fields = selectedDriver.value?.fields || []
+  const missing = fields.filter((f: any) => {
+    const name = typeof f === 'string' ? f : f.name
+    return !driverCredentials.value[name]?.trim()
+  })
+  if (missing.length > 0) {
+    errorMessage.value = `Vul ${missing.length === 1 ? 'het ontbrekende veld' : 'alle velden'} bij ${selectedDriver.value?.name} in.`
+    return
+  }
+
+  // Installation details: take from local fields (which are pre-filled from the
+  // product record if available, else the user entered them in the wizard).
+  if (!capacityWp.value || !orientation.value || !tilt.value) {
+    errorMessage.value = 'Vul vermogen, oriëntatie en helling in — Sundata heeft deze nodig om de koppeling te maken.'
+    return
+  }
+
+  isSubmitting.value = true
   step.value = 'creating'
   errorMessage.value = ''
 
   try {
     const headers = await getAuthHeaders()
-    const result = await $fetch('/api/sundata/create-plant', {
+
+    // Step 1: Create plant (or reuse existing by name) — idempotent
+    let plantId = existingPlantId.value
+    let companyId = existingCompanyId.value
+    if (!plantId) {
+      const plantResult: any = await $fetch('/api/sundata/create-plant', {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: {
+          customer_id: props.customerId,
+          plant_name: plantName.value,
+        },
+      })
+      plantId = plantResult.plant_id
+      companyId = plantResult.company_id
+      existingPlantId.value = plantId
+      existingCompanyId.value = companyId
+    }
+
+    // Step 2: Create meter on that plant
+    const meterResult: any = await $fetch('/api/sundata/create-meter', {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: {
         customer_id: props.customerId,
-        plant_name: plantName.value,
-        driver_id: selectedDriver.value.id,
+        plant_id: plantId,
+        driver_id: selectedDriver.value.driver_name || selectedDriver.value.id,
+        composition_alias: selectedDriver.value.composition_alias || selectedDriver.value.id,
         driver_credentials: driverCredentials.value,
-        capacity_kwp: props.productData?.capacityWp ? parseFloat(props.productData.capacityWp) / 1000 : undefined,
-        orientation: props.productData?.orientation || undefined,
-        tilt: props.productData?.tilt ? parseFloat(props.productData.tilt) : undefined,
+        capacity_kwp: capacityWp.value ? parseFloat(capacityWp.value) / 1000 : undefined,
+        orientation: orientation.value || undefined,
+        tilt: tilt.value ? parseFloat(tilt.value) : undefined,
       },
     })
 
-    createResult.value = result
+    createResult.value = meterResult
 
-    if (result.success) {
-      // Verify
+    if (meterResult.success) {
       step.value = 'verifying'
       await new Promise(r => setTimeout(r, 2000))
-
       try {
         const verify = await $fetch('/api/sundata/verify-plant', {
           headers,
-          params: { device_id: result.device_id },
+          params: { device_id: meterResult.device_id },
         })
         verifyResult.value = verify
       } catch {}
-
       step.value = 'done'
     } else {
-      errorMessage.value = result.error || 'Koppeling mislukt'
+      // Meter failed but plant exists — keep plant_id so retry reuses it
+      errorMessage.value = meterResult.error || 'Meter koppelen mislukt'
       step.value = 'error'
     }
   } catch (e: any) {
     errorMessage.value = e?.data?.message || 'Er ging iets mis. Probeer het opnieuw.'
     step.value = 'error'
+  } finally {
+    isSubmitting.value = false
   }
+}
+
+// Retry from the error panel: keeps plant_id, re-submits credentials
+function retryMeter() {
+  step.value = 'credentials'
+  errorMessage.value = ''
+  isSubmitting.value = false
 }
 
 function handleDone() {
@@ -188,6 +240,8 @@ function handleDone() {
 function close() {
   emit('update:modelValue', false)
 }
+
+const { onMouseDown: onBackdropDown, onClick: onBackdropClick } = useBackdropClose(close)
 </script>
 
 <template>
@@ -196,7 +250,8 @@ function close() {
       <div
         v-if="modelValue"
         class="fixed inset-0 z-50 flex items-center justify-center p-4"
-        @click.self="close"
+        @mousedown="onBackdropDown"
+        @click="onBackdropClick"
       >
         <div class="absolute inset-0 bg-black/30 backdrop-blur-sm" />
 
@@ -261,7 +316,10 @@ function close() {
                 </button>
               </div>
 
-              <p v-if="!driversLoading && filteredDrivers.length === 0" class="py-4 text-center text-sm text-gray-400">
+              <p v-if="!driversLoading && drivers.length === 0" class="rounded-xl bg-amber-50 p-4 text-center text-sm text-amber-700">
+                Er zijn nog geen merken actief in jullie Sundata account. Neem contact op met Sundata om merken te activeren.
+              </p>
+              <p v-else-if="!driversLoading && filteredDrivers.length === 0" class="py-4 text-center text-sm text-gray-400">
                 Geen merken gevonden voor "{{ searchBrand }}"
               </p>
             </template>
@@ -289,7 +347,29 @@ function close() {
                   <input v-model="plantName" type="text" class="input" placeholder="Bijv. Zonnepanelen Fam. Jansen" required />
                 </div>
 
-                <!-- Wp/oriëntatie/helling komen uit het product -->
+                <!-- Installation details — required by Sundata.
+                     Pre-filled from the product record when available, else
+                     the installer fills them right here. -->
+                <div class="border-t border-gray-100 pt-3">
+                  <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Installatie details</p>
+                  <div class="grid grid-cols-3 gap-3">
+                    <div>
+                      <label class="label">Vermogen (Wp) <span class="text-red-400">*</span></label>
+                      <input v-model="capacityWp" type="number" step="1" min="0" class="input" placeholder="8400" required />
+                    </div>
+                    <div>
+                      <label class="label">Oriëntatie <span class="text-red-400">*</span></label>
+                      <select v-model="orientation" class="input" required>
+                        <option value="">Kies...</option>
+                        <option v-for="o in orientationOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="label">Helling (°) <span class="text-red-400">*</span></label>
+                      <input v-model="tilt" type="number" step="1" min="0" max="90" class="input" placeholder="35" required />
+                    </div>
+                  </div>
+                </div>
 
                 <div v-if="selectedDriver.fields?.length" class="border-t border-gray-100 pt-3">
                   <div class="flex items-center justify-between mb-2">
@@ -305,25 +385,38 @@ function close() {
                     </a>
                   </div>
                   <div class="space-y-3">
-                    <div v-for="field in selectedDriver.fields" :key="field">
-                      <label class="label">{{ fieldLabels[field] || field }}</label>
+                    <div v-for="field in selectedDriver.fields" :key="typeof field === 'string' ? field : field.name">
+                      <label class="label">{{ typeof field === 'string' ? field : field.label }}</label>
                       <input
-                        v-model="driverCredentials[field]"
-                        :type="field.includes('password') ? 'password' : 'text'"
+                        v-model="driverCredentials[typeof field === 'string' ? field : field.name]"
+                        :type="(typeof field === 'string' ? field : field.name).toLowerCase().includes('password') ? 'password' : 'text'"
                         class="input"
-                        :placeholder="fieldLabels[field] || field"
+                        :placeholder="typeof field === 'string' ? field : field.label"
                         required
                       />
                     </div>
                   </div>
                 </div>
 
+                <p
+                  v-if="errorMessage"
+                  class="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+                  role="alert"
+                >
+                  {{ errorMessage }}
+                </p>
+
                 <button
                   type="submit"
-                  class="mt-4 w-full flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-600 transition-colors"
+                  :disabled="isSubmitting"
+                  class="mt-4 w-full flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-600 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  <AppIcon name="zap" :size="16" />
-                  Koppelen met Sundata
+                  <svg v-if="isSubmitting" class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  <AppIcon v-else name="zap" :size="16" />
+                  {{ isSubmitting ? 'Koppelen...' : 'Koppelen met Sundata' }}
                 </button>
               </form>
             </template>
@@ -389,16 +482,22 @@ function close() {
                 <div class="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-50">
                   <AppIcon name="x-circle" :size="28" class="text-red-500" />
                 </div>
-                <p class="text-lg font-semibold text-gray-900">Koppeling mislukt</p>
+                <p class="text-lg font-semibold text-gray-900">
+                  {{ existingPlantId ? 'Meter koppelen mislukt' : 'Koppeling mislukt' }}
+                </p>
                 <p class="mt-2 text-sm text-red-600">{{ errorMessage }}</p>
+
+                <p v-if="existingPlantId" class="mt-3 text-xs text-gray-500">
+                  De plant is aangemaakt in Sundata (#{{ existingPlantId }}). Bij opnieuw proberen hergebruiken we deze — er worden geen dubbele plants aangemaakt.
+                </p>
 
                 <div class="mt-6 flex justify-center gap-3">
                   <button class="btn-secondary" @click="close">Sluiten</button>
                   <button
                     class="rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800"
-                    @click="reset"
+                    @click="existingPlantId ? retryMeter() : reset()"
                   >
-                    Opnieuw proberen
+                    {{ existingPlantId ? 'Meter opnieuw koppelen' : 'Opnieuw proberen' }}
                   </button>
                 </div>
               </div>

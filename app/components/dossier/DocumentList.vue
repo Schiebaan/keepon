@@ -44,10 +44,15 @@ function handleUpload(data: any) {
   showUploadModal.value = false
 }
 
-function handleRemove(id: string) {
-  if (confirm('Weet je zeker dat je dit document wilt verwijderen?')) {
-    removeDocument(id)
-  }
+const confirm = useConfirm()
+async function handleRemove(id: string) {
+  const ok = await confirm({
+    title: 'Document verwijderen?',
+    message: 'Dit document wordt direct verwijderd.',
+    confirmLabel: 'Verwijderen',
+    dangerous: true,
+  })
+  if (ok) removeDocument(id)
 }
 
 function handleDownload(doc: CustomerDocument) {

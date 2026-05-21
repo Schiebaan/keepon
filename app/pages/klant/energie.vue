@@ -1,5 +1,5 @@
 <script setup lang="ts">
-definePageMeta({ layout: 'customer', middleware: ['auth'] })
+definePageMeta({ layout: 'customer', middleware: ['auth', 'customer-onboarding'] })
 
 const { partner } = usePartner()
 const { customer } = useCurrentCustomer()

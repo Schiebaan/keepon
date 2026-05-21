@@ -27,8 +27,8 @@ const credentialFields: Record<string, { label: string; key: string; type: strin
     { label: 'Wachtwoord', key: 'password', type: 'password', placeholder: '••••••••' },
   ],
   'Weheat': [
-    { label: 'Client ID', key: 'client_id', type: 'text', placeholder: 'wh_client_xxxxxxxx' },
-    { label: 'Client Secret', key: 'client_secret', type: 'password', placeholder: '••••••••••••••••' },
+    { label: 'E-mailadres Weheat portal', key: 'username', type: 'email', placeholder: 'installateur@bedrijf.nl' },
+    { label: 'Wachtwoord', key: 'password', type: 'password', placeholder: '••••••••' },
   ],
   'Easee': [
     { label: 'Gebruikersnaam', key: 'username', type: 'text', placeholder: 'installateur@bedrijf.nl' },
@@ -57,13 +57,13 @@ const integrationInfo: Record<string, { description: string; helpUrl: string; fe
     features: ['Storingmeldingen', 'Alle omvormer-merken', 'Historische data'],
   },
   'Weheat': {
-    description: 'Koppel met WeHeat voor real-time monitoring van warmtepompen. Zie COP, vermogen en watertemperatuur.',
-    helpUrl: 'https://weheat.nl/api',
+    description: 'Koppel met Weheat voor real-time monitoring van warmtepompen. Log in met je eigen Weheat-portal account — géén aparte developer-toegang nodig.',
+    helpUrl: 'https://portal.weheat.nl/',
     features: ['Real-time statusmonitoring', 'COP & vermogensdata', 'Energieverbruik', 'Foutmeldingen'],
   },
   'Easee': {
-    description: 'Koppel met Easee voor laadpaal monitoring. Zie laadsessies, vermogen en energieverbruik per klant.',
-    helpUrl: 'https://developer.easee.com',
+    description: 'Koppel met Easee voor laadpaal monitoring. Gebruik het account waarmee je in de Easee app inlogt — bij voorkeur een aparte technicus-gebruiker zonder 2FA.',
+    helpUrl: 'https://easee.com/se/support/',
     features: ['Laadsessie-overzicht', 'Real-time vermogen', 'Energieverbruik', 'Laadstatus'],
   },
   'Mollie Payments': {
@@ -140,6 +140,39 @@ function togglePassword(key: string) {
   showPasswords.value[key] = !showPasswords.value[key]
 }
 
+// --- Weheat headless connect ---
+const weheatConnecting = ref(false)
+const weheatConnectError = ref('')
+const weheatUsername = ref('')
+const weheatPassword = ref('')
+
+async function connectWeheatHeadless() {
+  if (weheatConnecting.value) return
+  if (!weheatUsername.value.trim() || !weheatPassword.value) return
+  weheatConnecting.value = true
+  weheatConnectError.value = ''
+  try {
+    const supabase = useSupabaseClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) throw new Error('Niet ingelogd')
+
+    await $fetch('/api/integrations/weheat/connect-headless', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+      body: { username: weheatUsername.value.trim(), password: weheatPassword.value },
+    })
+    weheatUsername.value = ''
+    weheatPassword.value = ''
+    step.value = 'success'
+    testDetails.value = { connected: true }
+    emit('saved')
+  } catch (e: any) {
+    weheatConnectError.value = e?.data?.message || e?.message || 'Verbinden mislukt'
+  } finally {
+    weheatConnecting.value = false
+  }
+}
+
 const testDetails = ref<Record<string, any> | null>(null)
 
 async function testConnection() {
@@ -211,6 +244,8 @@ function handleSave() {
   emit('close')
 }
 
+const { onMouseDown: onBackdropDown, onClick: onBackdropClick } = useBackdropClose(() => handleClose())
+
 function handleClose() {
   emit('close')
 }
@@ -222,7 +257,8 @@ function handleClose() {
       <div
         v-if="open && integration"
         class="fixed inset-0 z-50 flex items-center justify-center p-4"
-        @click.self="handleClose"
+        @mousedown="onBackdropDown"
+        @click="onBackdropClick"
       >
         <!-- Backdrop -->
         <div class="absolute inset-0 bg-black/30 backdrop-blur-sm" />
@@ -290,7 +326,52 @@ function handleClose() {
 
             <!-- Step: Credentials -->
             <div v-if="step === 'credentials'">
-              <div class="rounded-xl border border-gray-200 p-4">
+              <!-- Weheat: headless connect via Weheat portal credentials -->
+              <div v-if="integration.integrationType === 'weheat'" class="rounded-xl border border-gray-200 p-5">
+                <div class="flex items-center gap-3 mb-3">
+                  <div class="flex h-10 w-10 items-center justify-center rounded-full bg-rose-50 text-rose-600">
+                    <AppIcon name="heat-pump" :size="20" />
+                  </div>
+                  <div>
+                    <h4 class="text-sm font-semibold text-gray-900">Verbinden via Weheat</h4>
+                    <p class="text-xs text-gray-500">Log in met je Weheat portal-account. Wij doen de rest.</p>
+                  </div>
+                </div>
+
+                <div class="space-y-3">
+                  <div>
+                    <label class="label">E-mailadres Weheat portal</label>
+                    <input v-model="weheatUsername" type="email" class="input" placeholder="installateur@bedrijf.nl" autocomplete="off" />
+                  </div>
+                  <div>
+                    <label class="label">Wachtwoord</label>
+                    <input v-model="weheatPassword" type="password" class="input" placeholder="••••••••" autocomplete="off" />
+                  </div>
+                </div>
+
+                <p v-if="weheatConnectError" class="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {{ weheatConnectError }}
+                </p>
+
+                <p class="mt-3 text-[11px] text-gray-400">
+                  We slaan alleen het sessie-token op, niet je wachtwoord.
+                </p>
+
+                <div class="mt-4 flex justify-end gap-3">
+                  <button class="btn-secondary" @click="handleClose">Annuleren</button>
+                  <button
+                    class="btn-primary"
+                    :disabled="!weheatUsername.trim() || !weheatPassword || weheatConnecting"
+                    @click="connectWeheatHeadless"
+                  >
+                    <AppIcon name="check" :size="16" />
+                    {{ weheatConnecting ? 'Verbinden...' : 'Verbinden' }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Other integrations: credentials form -->
+              <div v-else class="rounded-xl border border-gray-200 p-4">
                 <h4 class="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
                   <AppIcon name="settings" :size="16" class="text-gray-400" />
                   Inloggegevens
@@ -340,7 +421,7 @@ function handleClose() {
               </div>
 
               <!-- Actions -->
-              <div class="mt-5 flex justify-end gap-3">
+              <div v-if="integration.integrationType !== 'weheat'" class="mt-5 flex justify-end gap-3">
                 <button class="btn-secondary" @click="handleClose">Annuleren</button>
                 <button
                   class="btn-primary"
@@ -351,6 +432,9 @@ function handleClose() {
                   <AppIcon name="switch" :size="16" />
                   Verbinding testen
                 </button>
+              </div>
+              <div v-else class="mt-5 flex justify-end">
+                <button class="btn-secondary" @click="handleClose">Annuleren</button>
               </div>
             </div>
 

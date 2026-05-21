@@ -56,6 +56,16 @@ async function handleReset() {
   try {
     const { error } = await supabase.auth.updateUser({ password: newPassword.value })
     if (error) throw error
+
+    // Fire-and-forget security notification email
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session?.access_token) return
+      $fetch('/api/auth/password-changed', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      }).catch(() => {})
+    })
+
     isDone.value = true
   } catch (err: any) {
     errorMessage.value = err.message || 'Er ging iets mis. Probeer het opnieuw.'

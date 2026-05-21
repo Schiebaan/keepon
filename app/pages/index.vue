@@ -42,23 +42,22 @@ if (!config.public.demoMode) {
       <div class="flex min-h-screen items-center justify-center px-4">
         <div class="w-full max-w-md">
           <div class="mb-8 text-center">
-            <!-- Partner logo or fallback -->
-            <div class="mx-auto mb-4 flex items-center justify-center">
+            <!-- Partner logo (alleen tonen als er één is) -->
+            <div v-if="partner.logo_url" class="mx-auto mb-5 flex items-center justify-center">
               <img
-                v-if="partner.logo_url"
                 :src="partner.logo_url"
                 :alt="partner.name"
-                class="h-14 w-14 rounded-2xl"
+                class="h-20 w-auto max-w-[280px] object-contain"
               />
-              <div
-                v-else
-                class="flex h-14 w-14 items-center justify-center rounded-2xl text-2xl font-bold text-white"
-                :style="{ backgroundColor: partner.primary_color }"
-              >
-                {{ partner.name.charAt(0) }}
-              </div>
             </div>
-            <h1 class="text-2xl font-bold text-gray-900">{{ partner.name }}</h1>
+            <!-- Smal accent boven de wordmark — geeft brand-presence zonder
+                 een kale letter-tegel als er geen logo geüpload is. -->
+            <div
+              v-else
+              class="mx-auto mb-4 h-1 w-12 rounded-full"
+              :style="{ backgroundColor: partner.primary_color }"
+            />
+            <h1 class="text-3xl font-bold tracking-tight text-gray-900">{{ partner.name }}</h1>
             <p class="mt-2 text-sm text-gray-500">
               Modulair klantportaal voor installateurs
             </p>
@@ -105,7 +104,7 @@ if (!config.public.demoMode) {
               </div>
               <div>
                 <p class="font-semibold text-gray-900">Klant portaal</p>
-                <p class="text-sm text-gray-500">Mijn huis, systemen en abonnementen</p>
+                <p class="text-sm text-gray-500">Mijn huis, systemen en contracten</p>
               </div>
               <AppIcon name="chevron-right" :size="18" class="ml-auto text-gray-300 transition-colors group-hover:text-gray-500" />
             </NuxtLink>

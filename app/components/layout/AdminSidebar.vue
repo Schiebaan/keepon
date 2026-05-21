@@ -6,6 +6,7 @@ const route = useRoute()
 const navItems = [
   { label: 'Dashboard', icon: 'dashboard', to: '/admin' },
   { label: 'Klanten', icon: 'users', to: '/admin/customers' },
+  { label: 'Uitnodigingen', icon: 'send', to: '/admin/uitnodigingen' },
   { label: 'Betalingen', icon: 'credit-card', to: '/admin/payments' },
   { label: 'Service', icon: 'tool', to: '/admin/service' },
   { label: 'Communicatie', icon: 'mail', to: '/admin/communicatie' },
@@ -24,23 +25,18 @@ function isActive(to: string) {
     <!-- Logo area -->
     <div class="flex h-16 items-center gap-3 border-b border-gray-100 px-5">
       <NuxtLink to="/" class="flex items-center gap-3 no-underline">
+        <!-- Mét logo: alleen het logo — geen herhaalde naam of subtitel. -->
         <img
           v-if="partner.logo_url"
           :src="partner.logo_url"
           :alt="partner.name"
-          class="h-8 w-auto"
+          class="h-12 w-auto max-w-[180px] object-contain"
         />
-        <div
-          v-else
-          class="flex h-9 w-9 items-center justify-center rounded-lg text-sm font-bold text-white"
-          :style="{ backgroundColor: partner.primary_color }"
-        >
-          {{ partner.name.charAt(0) }}
-        </div>
-        <div>
-          <p class="text-sm font-semibold text-gray-900">{{ partner.name }}</p>
-          <p class="text-[11px] text-gray-400">Beheerportaal</p>
-        </div>
+        <!-- Zonder logo: wordmark-fallback met smal accent + partnernaam. -->
+        <template v-else>
+          <span class="block h-8 w-[3px] shrink-0 rounded-full" :style="{ backgroundColor: partner.primary_color }" />
+          <p class="text-sm font-bold tracking-tight text-gray-900">{{ partner.name }}</p>
+        </template>
       </NuxtLink>
     </div>
 
