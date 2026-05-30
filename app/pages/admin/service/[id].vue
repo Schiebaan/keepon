@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { formatTicketRef } from '~/utils/formatters'
+import { labelChip, type TicketLabel } from '~/utils/ticket-labels'
 
 definePageMeta({ layout: 'admin', middleware: ['auth', 'role-partner'] })
 
@@ -27,6 +28,7 @@ interface Ticket {
   created_at: string
   updated_at: string
   messages: TicketMessage[]
+  labels?: TicketLabel[]
   customer: {
     id: string; full_name: string | null; email: string; phone?: string | null
     street?: string | null; house_number?: string | null; postal_code?: string | null; city?: string | null
@@ -119,6 +121,42 @@ async function changeStatus(status: string) {
 
 async function changeUrgency(urgency: string) {
   await updateTicket({ urgency }, 'Urgentie bijgewerkt')
+}
+
+// --- Labels ---
+const labelCatalog = ref<TicketLabel[]>([])
+const showLabelPicker = ref(false)
+const labelSaving = ref(false)
+
+async function loadLabelCatalog() {
+  try {
+    labelCatalog.value = await $fetch<TicketLabel[]>('/api/partners/ticket-labels', { headers: await authHeaders() })
+  } catch { labelCatalog.value = [] }
+}
+onMounted(loadLabelCatalog)
+
+const assignedLabelIds = computed(() => new Set((ticket.value?.labels || []).map(l => l.id)))
+
+async function toggleLabel(labelId: string) {
+  if (!ticket.value || labelSaving.value) return
+  const current = new Set(assignedLabelIds.value)
+  current.has(labelId) ? current.delete(labelId) : current.add(labelId)
+  labelSaving.value = true
+  try {
+    const res = await $fetch<{ ok: boolean; labels: TicketLabel[] }>(
+      `/api/tickets/${ticketId}/labels`,
+      {
+        method: 'PUT',
+        headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
+        body: { label_ids: [...current] },
+      },
+    )
+    if (ticket.value) ticket.value.labels = res.labels
+  } catch (e: any) {
+    sendError.value = e?.data?.message || 'Label bijwerken mislukt'
+  } finally {
+    labelSaving.value = false
+  }
 }
 
 // Edit subject + description
@@ -456,6 +494,61 @@ const isClosed = computed(() => ticket.value?.status === 'opgelost' || ticket.va
               Open klantkaart
               <AppIcon name="chevron-right" :size="12" />
             </NuxtLink>
+          </div>
+
+          <!-- Labels -->
+          <div class="rounded-2xl border border-gray-100 bg-white p-5">
+            <div class="flex items-center justify-between mb-3">
+              <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Labels</p>
+              <button
+                class="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-800"
+                @click="showLabelPicker = !showLabelPicker"
+              >
+                <AppIcon :name="showLabelPicker ? 'check' : 'plus'" :size="12" />
+                {{ showLabelPicker ? 'Klaar' : 'Wijzig' }}
+              </button>
+            </div>
+
+            <!-- Toegewezen labels (compact, view-mode) -->
+            <div v-if="!showLabelPicker">
+              <div v-if="ticket.labels && ticket.labels.length" class="flex flex-wrap gap-1.5">
+                <span
+                  v-for="l in ticket.labels"
+                  :key="l.id"
+                  class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium"
+                  :class="[labelChip(l.color).bg, labelChip(l.color).text]"
+                >
+                  <span class="h-1.5 w-1.5 rounded-full" :class="labelChip(l.color).dot" />
+                  {{ l.name }}
+                </span>
+              </div>
+              <p v-else class="text-xs text-gray-400">Nog geen labels. Klik op "Wijzig".</p>
+            </div>
+
+            <!-- Picker (edit-mode) — toggle uit de catalogus -->
+            <div v-else>
+              <div v-if="labelCatalog.length" class="flex flex-wrap gap-1.5">
+                <button
+                  v-for="l in labelCatalog"
+                  :key="l.id"
+                  type="button"
+                  class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-all disabled:opacity-50"
+                  :class="assignedLabelIds.has(l.id)
+                    ? [labelChip(l.color).bg, labelChip(l.color).text, 'ring-1', labelChip(l.color).ring]
+                    : 'bg-gray-50 text-gray-400 hover:bg-gray-100'"
+                  :disabled="labelSaving"
+                  @click="toggleLabel(l.id)"
+                >
+                  <span class="h-1.5 w-1.5 rounded-full" :class="assignedLabelIds.has(l.id) ? labelChip(l.color).dot : 'bg-gray-300'" />
+                  {{ l.name }}
+                  <AppIcon v-if="assignedLabelIds.has(l.id)" name="check" :size="10" />
+                </button>
+              </div>
+              <p v-else class="text-xs text-gray-400">
+                Nog geen labels ingesteld.
+                <NuxtLink to="/admin/settings" class="text-blue-600 hover:underline">Beheer ze in Instellingen.</NuxtLink>
+              </p>
+            </div>
           </div>
 
           <!-- Status actions -->

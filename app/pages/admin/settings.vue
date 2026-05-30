@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { getModuleTheme } from '~/utils/module-theme'
+import { LABEL_COLORS, labelChip, type TicketLabel } from '~/utils/ticket-labels'
 
 definePageMeta({ layout: 'admin', middleware: ['auth', 'role-partner'] })
 
@@ -41,6 +42,91 @@ async function savePricing(config: any) {
 }
 
 if (typeof window !== 'undefined') loadPricing()
+
+// --- Ticketlabels beheer ---
+const ticketLabels = ref<TicketLabel[]>([])
+const labelsLoaded = ref(false)
+const newLabelName = ref('')
+const newLabelColor = ref<string>('blue')
+const labelBusy = ref(false)
+const labelError = ref('')
+const editingLabelId = ref<string | null>(null)
+const editLabelName = ref('')
+
+async function labelAuthHeaders() {
+  const supabase = useSupabaseClient()
+  const { data: { session } } = await supabase.auth.getSession()
+  return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}
+}
+
+async function loadTicketLabels() {
+  try {
+    ticketLabels.value = await $fetch<TicketLabel[]>('/api/partners/ticket-labels?include_inactive=1', {
+      headers: await labelAuthHeaders(),
+    })
+  } catch { ticketLabels.value = [] }
+  finally { labelsLoaded.value = true }
+}
+if (typeof window !== 'undefined') loadTicketLabels()
+
+async function addLabel() {
+  const name = newLabelName.value.trim()
+  if (!name || labelBusy.value) return
+  labelBusy.value = true
+  labelError.value = ''
+  try {
+    const created = await $fetch<TicketLabel>('/api/partners/ticket-labels', {
+      method: 'POST',
+      headers: { ...(await labelAuthHeaders()), 'Content-Type': 'application/json' },
+      body: { name, color: newLabelColor.value },
+    })
+    ticketLabels.value.push(created)
+    newLabelName.value = ''
+    newLabelColor.value = 'blue'
+  } catch (e: any) {
+    labelError.value = e?.data?.message || 'Toevoegen mislukt'
+  } finally {
+    labelBusy.value = false
+  }
+}
+
+async function updateLabel(label: TicketLabel, patch: Partial<TicketLabel>) {
+  try {
+    const updated = await $fetch<TicketLabel>(`/api/partners/ticket-labels/${label.id}`, {
+      method: 'PUT',
+      headers: { ...(await labelAuthHeaders()), 'Content-Type': 'application/json' },
+      body: patch,
+    })
+    const i = ticketLabels.value.findIndex(l => l.id === label.id)
+    if (i !== -1) ticketLabels.value[i] = updated
+  } catch (e: any) {
+    labelError.value = e?.data?.message || 'Opslaan mislukt'
+  }
+}
+
+function startEditLabel(label: TicketLabel) {
+  editingLabelId.value = label.id
+  editLabelName.value = label.name
+}
+async function saveEditLabel(label: TicketLabel) {
+  const name = editLabelName.value.trim()
+  if (!name) return
+  await updateLabel(label, { name })
+  editingLabelId.value = null
+}
+
+async function deleteLabel(label: TicketLabel) {
+  if (!confirm(`Label "${label.name}" verwijderen? Het wordt ook van alle tickets gehaald.`)) return
+  try {
+    await $fetch(`/api/partners/ticket-labels/${label.id}`, {
+      method: 'DELETE',
+      headers: await labelAuthHeaders(),
+    })
+    ticketLabels.value = ticketLabels.value.filter(l => l.id !== label.id)
+  } catch (e: any) {
+    labelError.value = e?.data?.message || 'Verwijderen mislukt'
+  }
+}
 
 const moduleIcons: Record<string, string> = { solar: 'solar', heat_pump: 'heat-pump', ev_charger: 'ev-charger' }
 const moduleColors: Record<string, string> = { solar: 'bg-amber-50 text-amber-600', heat_pump: 'bg-rose-50 text-rose-600', ev_charger: 'bg-sky-50 text-sky-600' }
@@ -606,6 +692,99 @@ async function handleLogoChange(event: Event) {
           <p class="mt-2 text-[11px] text-gray-400">
             Tip: verwijs in je algemene voorwaarden naar de juiste bijlage, bv. <em>"Voor specifieke voorwaarden rond zonnepanelen, zie Bijlage A hieronder."</em>
           </p>
+        </div>
+
+        <!-- Ticketlabels -->
+        <div class="section">
+          <div class="mb-4 flex items-center gap-3">
+            <AppIcon name="tag" :size="18" class="text-gray-400" />
+            <h2 class="text-base font-semibold text-gray-900">Ticketlabels</h2>
+          </div>
+          <p class="mb-4 text-xs text-gray-500">
+            Interne labels om de werkstroom op tickets bij te houden (bv. "Wacht op antwoord klant").
+            Alleen zichtbaar voor jou en je team — de klant ziet ze niet.
+          </p>
+
+          <div v-if="labelError" class="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{{ labelError }}</div>
+
+          <!-- Bestaande labels -->
+          <div v-if="labelsLoaded && ticketLabels.length" class="space-y-1.5 mb-4">
+            <div
+              v-for="label in ticketLabels"
+              :key="label.id"
+              class="flex items-center gap-2 rounded-lg border border-gray-100 px-3 py-2"
+              :class="label.is_active === false ? 'opacity-50' : ''"
+            >
+              <!-- Kleur-swatch met dropdown -->
+              <select
+                :value="label.color"
+                class="h-6 w-6 shrink-0 cursor-pointer rounded-full border-0 p-0 appearance-none"
+                :class="labelChip(label.color).dot"
+                title="Kleur wijzigen"
+                @change="(e) => updateLabel(label, { color: (e.target as HTMLSelectElement).value })"
+              >
+                <option v-for="c in LABEL_COLORS" :key="c" :value="c">{{ c }}</option>
+              </select>
+
+              <!-- Naam (inline edit) -->
+              <template v-if="editingLabelId === label.id">
+                <input
+                  v-model="editLabelName"
+                  type="text"
+                  class="input flex-1 text-sm py-1"
+                  maxlength="60"
+                  @keyup.enter="saveEditLabel(label)"
+                />
+                <button class="rounded-lg bg-gray-900 px-2.5 py-1 text-xs font-medium text-white" @click="saveEditLabel(label)">Opslaan</button>
+                <button class="rounded-lg border border-gray-200 px-2.5 py-1 text-xs text-gray-600" @click="editingLabelId = null">Annuleer</button>
+              </template>
+              <template v-else>
+                <span
+                  class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium"
+                  :class="[labelChip(label.color).bg, labelChip(label.color).text]"
+                >
+                  <span class="h-1.5 w-1.5 rounded-full" :class="labelChip(label.color).dot" />
+                  {{ label.name }}
+                </span>
+                <span class="flex-1" />
+                <button class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700" title="Naam wijzigen" @click="startEditLabel(label)">
+                  <AppIcon name="settings" :size="14" />
+                </button>
+                <button class="rounded-lg p-1.5 text-gray-300 hover:bg-red-50 hover:text-red-500" title="Verwijderen" @click="deleteLabel(label)">
+                  <AppIcon name="trash" :size="14" />
+                </button>
+              </template>
+            </div>
+          </div>
+          <p v-else-if="labelsLoaded" class="mb-4 text-xs text-gray-400">Nog geen labels. Voeg je eerste hieronder toe.</p>
+
+          <!-- Nieuw label toevoegen -->
+          <div class="flex items-center gap-2 border-t border-gray-100 pt-3">
+            <select
+              v-model="newLabelColor"
+              class="h-8 w-8 shrink-0 cursor-pointer rounded-full border-0 p-0 appearance-none"
+              :class="labelChip(newLabelColor).dot"
+              title="Kleur"
+            >
+              <option v-for="c in LABEL_COLORS" :key="c" :value="c">{{ c }}</option>
+            </select>
+            <input
+              v-model="newLabelName"
+              type="text"
+              class="input flex-1 text-sm"
+              placeholder="Nieuw label, bv. Wacht op monteur"
+              maxlength="60"
+              @keyup.enter="addLabel"
+            />
+            <button
+              class="inline-flex items-center gap-1.5 rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+              :disabled="!newLabelName.trim() || labelBusy"
+              @click="addLabel"
+            >
+              <AppIcon name="plus" :size="14" />
+              Toevoegen
+            </button>
+          </div>
         </div>
       </div>
 

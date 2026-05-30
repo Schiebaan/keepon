@@ -1,5 +1,6 @@
 import { getServiceRoleClient } from '~~/server/utils/supabase'
 import { parseMessages } from '~~/server/utils/ticket-messages'
+import { labelsByTicket } from '~~/server/utils/ticket-labels'
 
 export default defineEventHandler(async (event) => {
   const { user } = await requireRole(event, 'partner_admin')
@@ -25,5 +26,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 500, message: error.message })
   }
 
-  return { ...data, messages: parseMessages(data.response) }
+  const labelMap = await labelsByTicket(supabase, [data.id])
+  return { ...data, messages: parseMessages(data.response), labels: labelMap.get(data.id) || [] }
 })

@@ -1,5 +1,6 @@
 import { getServiceRoleClient } from '~~/server/utils/supabase'
 import { parseMessages, latestMessage, messageCount } from '~~/server/utils/ticket-messages'
+import { labelsByTicket } from '~~/server/utils/ticket-labels'
 
 export default defineEventHandler(async (event) => {
   const { user } = await requireRole(event, 'partner_admin')
@@ -19,10 +20,14 @@ export default defineEventHandler(async (event) => {
     .eq('partner_id', partnerId)
     .order('updated_at', { ascending: false })
 
-  return (data || []).map(t => ({
+  const rows = data || []
+  const labelMap = await labelsByTicket(supabase, rows.map((t: any) => t.id))
+
+  return rows.map(t => ({
     ...t,
     messages: parseMessages(t.response),
     latest_message: latestMessage(t.response),
     message_count: messageCount(t.response),
+    labels: labelMap.get(t.id) || [],
   }))
 })

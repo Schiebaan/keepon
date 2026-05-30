@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { formatTicketRef } from '~/utils/formatters'
+import { labelChip, type TicketLabel } from '~/utils/ticket-labels'
 
 definePageMeta({ layout: 'admin', middleware: ['auth', 'role-partner'] })
 
@@ -21,6 +22,7 @@ interface Ticket {
   updated_at: string
   latest_message: LatestMsg | null
   message_count: number
+  labels?: TicketLabel[]
   customer: { id: string; full_name: string | null; email: string; phone?: string | null } | null
 }
 
@@ -319,6 +321,19 @@ function initials(name: string | null | undefined) {
             <span class="truncate">{{ t.customer?.full_name || 'Onbekend' }}</span>
             <span class="text-gray-300">·</span>
             <span class="shrink-0">{{ timeAgo(t.updated_at) }}</span>
+          </div>
+
+          <!-- Labels -->
+          <div v-if="t.labels && t.labels.length" class="mt-2 flex flex-wrap gap-1">
+            <span
+              v-for="l in t.labels"
+              :key="l.id"
+              class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+              :class="[labelChip(l.color).bg, labelChip(l.color).text]"
+            >
+              <span class="h-1 w-1 rounded-full" :class="labelChip(l.color).dot" />
+              {{ l.name }}
+            </span>
           </div>
 
           <!-- Message preview + thread count + awaits-reply dot -->
