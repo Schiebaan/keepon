@@ -1,4 +1,5 @@
 import { getServiceRoleClient } from '~~/server/utils/supabase'
+import { logIndividualInvitation } from '~~/server/utils/mailing-batch-log'
 
 export default defineEventHandler(async (event) => {
   const { user } = await requireRole(event, 'partner_admin')
@@ -242,6 +243,18 @@ export default defineEventHandler(async (event) => {
       success: mailRes.success,
       subject: emailContent.subject,
     })
+
+    // Stempel in mailing_batches zodat /admin/uitnodigingen de eerste mail
+    // ook ziet (in plaats van "Nooit gemaild" voor net-uitgenodigde klanten).
+    if (mailRes.success) {
+      await logIndividualInvitation({
+        supabase,
+        partnerId,
+        customerId: customer.id,
+        customerLabel: full_name || email,
+        actorUserId: user.id,
+      })
+    }
   } catch (e) {
     console.error('[email] Failed to send welcome email:', e)
   }

@@ -1,6 +1,7 @@
 import { getServiceRoleClient } from '~~/server/utils/supabase'
 import { sendEmail, buildWelcomeEmail, buildFromCustomTemplate, getPartnerTemplate } from '~~/server/utils/email'
 import { createWelcomeToken } from '~~/server/utils/welcome-token'
+import { logIndividualInvitation } from '~~/server/utils/mailing-batch-log'
 
 const MODULE_LABELS: Record<string, string> = {
   solar_panel: 'Zonnepanelen',
@@ -120,6 +121,16 @@ export default defineEventHandler(async (event) => {
   if (!result.success) {
     throw createError({ statusCode: 500, message: 'E-mail versturen mislukt: ' + (result.reason || 'onbekende fout') })
   }
+
+  // Stempel in mailing_batches zodat /admin/uitnodigingen niet meer denkt
+  // dat de klant "Nooit gemaild" is.
+  await logIndividualInvitation({
+    supabase,
+    partnerId,
+    customerId: customer.id,
+    customerLabel: customer.full_name || customer.email,
+    actorUserId: user.id,
+  })
 
   return {
     sent: true,
