@@ -359,10 +359,13 @@ async function handleSubmit() {
               <div>
                 <div class="flex items-center gap-2 text-xs text-gray-400 mb-3">
                   <div class="flex-1 border-t border-gray-200" />
-                  <span>Modules</span>
+                  <span>Modules <span class="text-red-500">*</span></span>
                   <div class="flex-1 border-t border-gray-200" />
                 </div>
-                <p class="text-xs text-gray-500 mb-3">Selecteer welke modules bij deze klant geïnstalleerd zijn. Je koppelt de monitoring later in het klantdossier.</p>
+                <p class="text-xs text-gray-500 mb-3">
+                  Selecteer welke modules bij deze klant geïnstalleerd zijn — <strong>ten minste één is verplicht</strong>.
+                  Zonder module kan de klant niks activeren in het portaal. Monitoring koppel je later in het klantdossier.
+                </p>
 
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <button
@@ -511,8 +514,9 @@ async function handleSubmit() {
                 <button class="btn-secondary" @click="close">Annuleren</button>
                 <button
                   class="btn-primary"
-                  :disabled="!form.full_name || !form.email || submitting"
-                  :class="{ 'opacity-50 cursor-not-allowed': !form.full_name || !form.email || submitting }"
+                  :disabled="!form.full_name || !form.email || selectedModules.size === 0 || submitting"
+                  :class="{ 'opacity-50 cursor-not-allowed': !form.full_name || !form.email || selectedModules.size === 0 || submitting }"
+                  :title="selectedModules.size === 0 ? 'Kies eerst minstens één module' : ''"
                   @click="handleSubmit"
                 >
                   <AppIcon v-if="!submitting" name="plus" :size="16" />

@@ -20,6 +20,18 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'email and full_name are required' })
   }
 
+  // Vereis ≥1 module. Zonder module is er in het klantportaal niets te
+  // activeren en wordt de welkomstmail een dood spoor. Bewust in de backend
+  // afgedwongen zodat er geen "kale" klanten via een omweg (curl, oude UI)
+  // binnenkomen.
+  const modulesForValidation: string[] = Array.isArray(body?.modules) ? body.modules : []
+  if (!modulesForValidation.length) {
+    throw createError({
+      statusCode: 400,
+      message: 'Kies ten minste één module (zonnepanelen, warmtepomp of laadpaal). Zonder module heeft de klant niks te activeren in het portaal.',
+    })
+  }
+
   // Get partner ID
   const { data: role } = await supabase
     .from('user_roles')

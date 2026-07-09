@@ -33,7 +33,42 @@ async function fetchCustomer() {
 }
 onMounted(fetchCustomer)
 
-const activeTab = ref<'producten' | 'documenten' | 'notities'>('producten')
+const activeTab = ref<'producten' | 'documenten' | 'mails' | 'notities'>('producten')
+
+// --- Mail-log ---
+interface MailEvent {
+  id: string
+  at: string
+  action: string
+  label: string
+  to: string | null
+  success: boolean
+  subject: string | null
+}
+const mailEvents = ref<MailEvent[]>([])
+const mailLoading = ref(false)
+async function loadMailLog() {
+  mailLoading.value = true
+  try {
+    const supabase = useSupabaseClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) return
+    const res = await $fetch<{ events: MailEvent[] }>(`/api/customers/${customerId}/mail-log`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+    mailEvents.value = res.events
+  } catch { mailEvents.value = [] }
+  finally { mailLoading.value = false }
+}
+watch(activeTab, (t) => { if (t === 'mails' && !mailEvents.value.length) loadMailLog() })
+
+function fmtMailDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString('nl-NL', {
+      day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    })
+  } catch { return iso }
+}
 
 // --- Onboarding-status derivation (shown in the dossier header) ---
 type OnboardingState = NonNullable<Customer['onboarding']>
@@ -924,6 +959,14 @@ function handleSaveNotes() {
           </button>
           <button
             class="flex-1 flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
+            :class="activeTab === 'mails' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'"
+            @click="activeTab = 'mails'"
+          >
+            <AppIcon name="mail" :size="16" />
+            E-mails
+          </button>
+          <button
+            class="flex-1 flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors"
             :class="activeTab === 'notities' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'"
             @click="activeTab = 'notities'"
           >
@@ -946,6 +989,54 @@ function handleSaveNotes() {
             :customer-id="customerId"
             :partner-id="customer.partner_id"
           />
+          <div v-if="activeTab === 'mails'">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-sm font-semibold text-gray-900">
+                E-mailhistorie
+                <span v-if="mailEvents.length" class="ml-1 text-gray-400 font-normal">({{ mailEvents.length }})</span>
+              </h3>
+              <button
+                class="text-xs text-gray-500 hover:text-gray-800"
+                @click="loadMailLog"
+                :disabled="mailLoading"
+              >
+                <AppIcon name="refresh" :size="12" class="inline-block mr-1" />
+                {{ mailLoading ? 'Laden...' : 'Verversen' }}
+              </button>
+            </div>
+
+            <div v-if="mailLoading && !mailEvents.length" class="py-8 text-center">
+              <div class="mx-auto h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
+            </div>
+            <div v-else-if="!mailEvents.length" class="rounded-xl border border-gray-100 bg-gray-50 py-8 text-center">
+              <AppIcon name="mail" :size="24" class="mx-auto text-gray-300 mb-2" />
+              <p class="text-sm text-gray-500">Er zijn nog geen e-mails naar deze klant verstuurd.</p>
+            </div>
+            <div v-else class="divide-y divide-gray-100 rounded-xl border border-gray-100">
+              <div v-for="ev in mailEvents" :key="ev.id" class="flex items-start gap-3 px-4 py-3">
+                <div
+                  class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+                  :class="ev.success ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'"
+                >
+                  <AppIcon :name="ev.success ? 'check' : 'x'" :size="14" />
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-baseline justify-between gap-2">
+                    <p class="text-sm font-medium text-gray-900">{{ ev.label }}</p>
+                    <span class="shrink-0 text-[11px] text-gray-400 whitespace-nowrap">{{ fmtMailDate(ev.at) }}</span>
+                  </div>
+                  <p v-if="ev.subject" class="mt-0.5 text-xs text-gray-500 truncate">"{{ ev.subject }}"</p>
+                  <p class="mt-0.5 text-[11px] text-gray-400">
+                    <span v-if="ev.to">Naar {{ ev.to }}</span>
+                    <span v-if="!ev.success" class="ml-1 text-red-600 font-medium">· mislukt</span>
+                  </p>
+                </div>
+              </div>
+            </div>
+            <p class="mt-3 text-[11px] text-gray-400">
+              Toont wat wíj hebben verstuurd. Voor aflevering, opening en bounces is een Resend-webhook nodig (op de roadmap).
+            </p>
+          </div>
           <div v-if="activeTab === 'notities'">
             <div class="flex items-center justify-between mb-3">
               <h3 class="text-sm font-semibold text-gray-900">Interne notities</h3>

@@ -5,6 +5,7 @@ const navItems = [
   { label: 'Dashboard', to: '/platform' },
   { label: 'Partners', to: '/platform/partners' },
   { label: 'Integraties', to: '/platform/integrations' },
+  { label: 'Support', to: '/platform/support' },
 ]
 
 function isActive(to: string) {
