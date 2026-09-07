@@ -232,9 +232,15 @@ function resolveChat() {
   })
 }
 
+const isEscalating = ref(false)
+
 async function escalateChat() {
   if (!activeChat.value) return
   const chat = activeChat.value
+  // Zonder dit slot levert driemaal klikken drie tickets op. De knop gaf geen
+  // enkele terugkoppeling, dus dat is precies wat er gebeurde.
+  if (isEscalating.value || chat.status === 'geescaleerd') return
+  isEscalating.value = true
   try {
     const lastAi = [...chat.messages].reverse().find(m => m.role === 'ai')
 
@@ -281,6 +287,8 @@ async function escalateChat() {
       content: 'Doorsturen is niet gelukt. Probeer het nogmaals of neem direct contact op.',
       timestamp: new Date().toISOString(),
     })
+  } finally {
+    isEscalating.value = false
   }
 }
 

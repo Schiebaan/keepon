@@ -29,6 +29,37 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, message: 'Geen klantaccount gevonden' })
   }
 
+  // Dubbele aanmelding afvangen.
+  //
+  // Een knop die niet reageert wordt drie keer aangeklikt — dat is geen
+  // gebruikersfout maar ontbrekende terugkoppeling. De knop heeft nu een slot,
+  // maar dat helpt niet bij een haperend netwerk of een dubbele tik op mobiel.
+  // Vandaar hier het echte vangnet.
+  //
+  // We weigeren niet, we geven het bestaande ticket terug. Voor de klant ziet
+  // een tweede klik er dan gewoon uit alsof het gelukt is — wat ook zo is — en
+  // hij krijgt geen foutmelding over iets wat prima ging.
+  const drempel = new Date(Date.now() - 2 * 60 * 1000).toISOString()
+  const { data: bestaand } = await supabase
+    .from('service_tickets')
+    .select('id, ticket_number, subject, description, status, urgency, module_type, response, helped_by_name, created_at, updated_at')
+    .eq('customer_id', customer.id)
+    .eq('subject', subject.trim().slice(0, 200))
+    .gte('created_at', drempel)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (bestaand) {
+    await auditLog(event, 'ticket.duplicate_suppressed', 'service_ticket', bestaand.id, {
+      customer_id: customer.id,
+      subject,
+    })
+    // Geen tweede mail naar de installateur: die zit niet te wachten op
+    // dezelfde melding in drievoud.
+    return bestaand
+  }
+
   const { data, error } = await supabase
     .from('service_tickets')
     .insert({
