@@ -46,6 +46,22 @@ vraagt, en als hij er na vier vragen niet uitkomt.
 
 Een melding met gevaar komt binnen met urgentie **hoog**.
 
+## Als de klant zelf doorstuurt
+
+Klanten wachten niet altijd de vragen af — ze klikken op *"Stuur door"* zodra ze
+een mens willen. Dan vat de assistent op dat moment alsnog samen, met wat hij
+heeft, en schrijft er expliciet bij wat er nog **niet** bekend is:
+
+> Klant meldt dat een zonnepaneel kapot is. Verdere details over symptoom
+> (sinds wanneer, wat precies zichtbaar is, foutcodes) en wat al geprobeerd is,
+> zijn nog niet bekend.
+
+Dat is bewust: je weet dan meteen dat je zelf moet uitvragen, én waarnaar. Beter
+dan een ticket dat volledig lijkt maar het niet is.
+
+Onder elke samenvatting staat het volledige gespreksverloop, voor als je de
+letterlijke woorden van de klant wilt nalezen.
+
 ## Zelf sturen wat hij weet
 
 De storingsartikelen bepalen wat de assistent kan oplossen zonder jou. Zie je

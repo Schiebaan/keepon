@@ -244,11 +244,34 @@ async function escalateChat() {
   try {
     const lastAi = [...chat.messages].reverse().find(m => m.role === 'ai')
 
-    // Heeft de assistent doorgevraagd, dan is zijn samenvatting het ticket. Die
-    // bevat symptoom, sinds wanneer en wat al geprobeerd is — waar de monteur
-    // iets aan heeft. Alleen als die ontbreekt vallen we terug op de ruwe
-    // chatregels, wat neerkomt op "zonnepaneel is kapot".
-    const draft = lastAi?.metadata?.ticketDraft
+    // Heeft de assistent al doorgevraagd, dan ligt zijn samenvatting er: met
+    // symptoom, sinds wanneer en wat al geprobeerd is.
+    //
+    // Klikt de klant eerder — en dat doet een ongeduldige klant, meteen bij de
+    // eerste vraag — dan is er nog geen samenvatting. Vroeger ging dan het ruwe
+    // gesprek eruit. Nu vragen we de assistent om alsnog samen te vatten met
+    // wat hij heeft, inclusief de opmerking dat er nog van alles onbekend is.
+    let draft = lastAi?.metadata?.ticketDraft
+    if (!draft) {
+      try {
+        const r = await $fetch<any>('/api/customer/ai-assist', {
+          method: 'POST',
+          headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
+          body: {
+            finalize: true,
+            moduleType: chat.moduleType,
+            messages: chat.messages
+              .filter(m => m.role === 'customer' || m.role === 'ai')
+              .map(m => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.content })),
+          },
+        })
+        draft = r?.ticketDraft
+      } catch {
+        // Lukt samenvatten niet, dan gaat het gesprek zelf eruit. Liever een
+        // ruw ticket dan geen ticket — de klant wacht.
+      }
+    }
+
     const transcript = chat.messages
       .filter(m => m.role === 'customer' || m.role === 'ai')
       .map(m => `${m.role === 'ai' ? 'Assistent' : 'Klant'}: ${m.content}`)

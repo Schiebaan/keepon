@@ -196,6 +196,9 @@ export default defineEventHandler(async (event): Promise<AiReply> => {
   const history: InkomendBericht[] = Array.isArray(body?.messages) ? body.messages : []
   const message: string = (body?.message || history[history.length - 1]?.content || '').toString().trim()
   const hintedModule: string | null = body?.moduleType || null
+  // De klant heeft zelf op "stuur door" geklikt. Dan hoeft er niet meer
+  // gevraagd te worden — dan moet er samengevat worden, met wat er ligt.
+  const finalize: boolean = !!body?.finalize
 
   if (!message) throw createError({ statusCode: 400, message: 'Bericht is verplicht' })
 
@@ -255,12 +258,26 @@ export default defineEventHandler(async (event): Promise<AiReply> => {
     .map(m => ({ role: m.role === 'assistant' ? 'assistant' as const : 'user' as const, content: m.content }))
 
   // --- Claude ---------------------------------------------------------------
+  //
+  // Bij finalize dwingen we de tool-aanroep af. Zonder dat zou het model bij
+  // een gesprek van één zin nóg een vervolgvraag stellen, terwijl de klant net
+  // heeft aangegeven dat 'ie een mens wil. Dan komt er een ticket binnen met
+  // alleen de ruwe openingszin — precies wat we wilden voorkomen.
+  const finalizeInstructie = `
+
+# De klant klikt nu op "stuur door"
+
+Stel geen vragen meer. Roep escalate_to_installer aan met wat je nu weet.
+
+Is dat weinig — bijvoorbeeld één zin zonder details — schrijf dat dan letterlijk in de description, zodat de monteur weet dat hij zelf moet uitvragen en waarnaar. Bijvoorbeeld: "Klant meldt alleen dat de zonnepanelen kapot zijn; symptoom, sinds wanneer en foutcode zijn nog niet bekend." Verzin niets bij.`
+
   try {
     const response = await getAnthropic().messages.create({
       model: AI_MODEL,
       max_tokens: AI_MAX_TOKENS,
-      system: systeem,
+      system: finalize ? systeem + finalizeInstructie : systeem,
       messages,
+      ...(finalize ? { tool_choice: { type: 'tool' as const, name: 'escalate_to_installer' } } : {}),
       tools: [{
         name: 'escalate_to_installer',
         description: 'Maak een serviceticket aan voor de installateur. Roep dit aan zodra je genoeg weet om de monteur op weg te helpen, of direct bij gevaar, contractvragen of als de klant erom vraagt.',
