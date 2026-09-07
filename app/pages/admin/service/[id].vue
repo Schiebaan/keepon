@@ -55,20 +55,27 @@ async function getAuthHeaders() {
   return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}
 }
 
-async function loadTicket() {
-  isLoading.value = true
-  loadError.value = ''
+async function loadTicket(background = false) {
+  // Achtergrondverversing mag het gesprek niet vervangen door een spinner, en
+  // een netwerkhikje mag het niet vervangen door een foutmelding.
+  if (!background) { isLoading.value = true; loadError.value = '' }
   try {
     ticket.value = await $fetch<Ticket>(`/api/tickets/${ticketId}`, { headers: await authHeaders() })
   } catch (e: any) {
-    loadError.value = e?.data?.message || 'Ticket niet gevonden'
+    if (!background) loadError.value = e?.data?.message || 'Ticket niet gevonden'
   } finally {
-    isLoading.value = false
+    if (!background) isLoading.value = false
   }
 }
 const authHeaders = getAuthHeaders
 
-onMounted(loadTicket)
+onMounted(() => loadTicket(false))
+
+// Reageert de klant terwijl de monteur het gesprek openheeft, dan hoort dat
+// bericht te verschijnen. replyText staat los van ticket, dus een verversing
+// gooit geen half getypte reactie weg. Tijdens het versturen even niet
+// pollen — anders komt het antwoord twee keer binnen.
+useLiveRefresh(() => loadTicket(true), { intervalMs: 30_000, paused: isSending })
 
 // --- Actions ---
 function showFlash(msg: string) {

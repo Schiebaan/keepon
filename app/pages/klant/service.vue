@@ -122,15 +122,22 @@ const quickActions = [
 ]
 
 // --- Load tickets ---
-async function loadTickets() {
-  ticketsLoading.value = true
+async function loadTickets(background = false) {
+  if (!background) ticketsLoading.value = true
   try {
     tickets.value = await $fetch<Ticket[]>('/api/customer/tickets', { headers: await authHeaders() })
-  } catch { tickets.value = [] }
-  finally { ticketsLoading.value = false }
+  } catch {
+    // Achtergrondverversing: bestaande lijst laten staan bij een netwerkhikje.
+    if (!background) tickets.value = []
+  }
+  finally { if (!background) ticketsLoading.value = false }
 }
 
 onMounted(() => { loadTickets() })
+
+// Ook aan de klantkant: een reactie van de installateur hoort te verschijnen
+// zonder dat de klant zelf ververst.
+useLiveRefresh(() => loadTickets(true), { intervalMs: 60_000 })
 
 const openTickets = computed(() => tickets.value.filter(t => t.status !== 'opgelost' && t.status !== 'gesloten'))
 const resolvedTickets = computed(() => tickets.value.filter(t => t.status === 'opgelost' || t.status === 'gesloten'))

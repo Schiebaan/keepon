@@ -40,19 +40,47 @@ async function getAuthHeaders() {
   return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}
 }
 
-async function loadTickets() {
-  isLoading.value = true
+// Tickets die binnenkwamen terwijl deze pagina openstond. We wisselen de lijst
+// niet stilletjes om — dan mist de servicedesk precies datgene waar 'ie op zit
+// te wachten. In plaats daarvan verschijnt er een telbaar signaal bovenaan.
+const nieuwBinnengekomen = ref(0)
+
+async function loadTickets(background = false) {
+  // Bij een achtergrondverversing de laadstate NIET aanzetten: dat zou de hele
+  // lijst elke 45 seconden vervangen door een spinner.
+  if (!background) isLoading.value = true
   try {
     const headers = await getAuthHeaders()
-    tickets.value = await $fetch<Ticket[]>('/api/tickets', { headers })
+    const verse = await $fetch<Ticket[]>('/api/tickets', { headers })
+    if (background) {
+      const bekend = new Set(tickets.value.map(t => t.id))
+      nieuwBinnengekomen.value += verse.filter(t => !bekend.has(t.id)).length
+    }
+    tickets.value = verse
   } catch {
-    tickets.value = []
+    // Bij een achtergrondverversing de bestaande lijst laten staan — een
+    // hikje in het netwerk mag het scherm niet leegvegen.
+    if (!background) tickets.value = []
   } finally {
-    isLoading.value = false
+    if (!background) isLoading.value = false
   }
 }
 
-onMounted(loadTickets)
+onMounted(() => loadTickets(false))
+
+// Zonder dit ververste de pagina alleen bij het openen: een aanvraag die
+// binnenkwam terwijl het tabblad openstond verscheen nooit.
+const { lastRefreshed } = useLiveRefresh(() => loadTickets(true), {
+  intervalMs: 45_000,
+  paused: showCreateModal,
+})
+const bijgewerkt = useRelativeTime(lastRefreshed)
+
+function toonNieuwe() {
+  nieuwBinnengekomen.value = 0
+  activeFilter.value = 'nieuw'
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
 
 // Normalize legacy 'open' status to 'nieuw' for display
 function normStatus(s: string) {
@@ -201,7 +229,21 @@ function initials(name: string | null | undefined) {
     <!-- Header -->
     <div class="mb-6 flex items-start justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-bold text-gray-900">Service</h1>
+        <div class="flex items-center gap-3">
+          <h1 class="text-2xl font-bold text-gray-900">Service</h1>
+          <button
+            v-if="nieuwBinnengekomen"
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-full bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700"
+            @click="toonNieuwe"
+          >
+            <span class="relative flex h-1.5 w-1.5">
+              <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+              <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
+            </span>
+            {{ nieuwBinnengekomen }} {{ nieuwBinnengekomen === 1 ? 'nieuwe aanvraag' : 'nieuwe aanvragen' }}
+          </button>
+        </div>
         <p class="mt-1 text-sm text-gray-500">
           <template v-if="counts.nieuw">
             <span class="font-medium text-blue-700">{{ counts.nieuw }} nieuw</span>
@@ -213,6 +255,7 @@ function initials(name: string | null | undefined) {
           <template v-else>
             Alle meldingen afgehandeld
           </template>
+          <span v-if="bijgewerkt" class="text-gray-400"> · bijgewerkt {{ bijgewerkt }}</span>
         </p>
       </div>
       <button
