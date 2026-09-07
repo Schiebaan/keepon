@@ -24,4 +24,11 @@ logs
 !.env.example
 !.env.production.example
 test-e2e.mjs
-scripts/
+
+# scripts/ stond hier in zijn geheel, maar bevat inmiddels echte projectinhoud:
+# de bron-markdown van alle support-artikelen, het seed-script en de
+# migratierunner. Omdat de dagelijkse backup `git add -A && git push` is, werd
+# dat allemaal nooit geback-upt. Geen van deze scripts bevat sleutels — ze
+# lezen allemaal uit .env, dat wél genegeerd blijft.
+scripts/*.log
+scripts/.tmp/
