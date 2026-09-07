@@ -19,9 +19,27 @@ export async function auditLog(
       actorId = user?.id || null
     }
 
-    // Get partner context
+    // Partnercontext. De tenant komt uit het subdomein, maar niet elke
+    // aanroep heeft er een: cron-jobs, webhooks en interne aanroepen draaien
+    // zonder. Die regels kregen partner_id null en waren daardoor onzichtbaar
+    // op het dashboard — juist meldingen die vanzelf binnenkomen.
+    //
+    // Valt de tenant weg, dan leiden we de partner af uit de meegegeven meta,
+    // en anders uit de klant waar het over gaat.
     const tenant = event.context.tenant
-    const partnerId = tenant?.id || null
+    let partnerId: string | null = tenant?.id || null
+
+    if (!partnerId && meta?.partner_id) {
+      partnerId = meta.partner_id
+    }
+    if (!partnerId && meta?.customer_id) {
+      const { data: c } = await supabase
+        .from('customers')
+        .select('partner_id')
+        .eq('id', meta.customer_id)
+        .single()
+      partnerId = c?.partner_id || null
+    }
 
     await supabase.from('audit_log').insert({
       actor_id: actorId,

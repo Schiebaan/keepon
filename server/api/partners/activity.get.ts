@@ -18,6 +18,24 @@ interface ActivityItem {
 }
 
 // Actions that are too noisy / not useful in a feed
+/**
+ * De acties die describe() daadwerkelijk in tekst kan omzetten.
+ *
+ * Deze lijst hoort gelijk te lopen met de cases in describe(). Hij staat hier
+ * omdat we er in de query op filteren: eerst 50 regels ophalen en dán pas
+ * filteren leverde een lege lijst op zodra er een reeks e-mailregels
+ * tussendoor kwam — precies wat er gebeurt na een mailingronde.
+ */
+const TOONBARE_ACTIES = [
+  'customer.created',
+  'customer.updated',
+  'customer.deleted',
+  'ticket.created',
+  'ticket.message_added',
+  'sundata.plant_created',
+  'sundata.meter_created',
+]
+
 const SKIP_ACTIONS = new Set<string>([
   'email.ticket_reply_sent',
   'email.new_ticket_installer_sent',
@@ -89,15 +107,17 @@ export default defineEventHandler(async (event) => {
   }
   if (!partnerId) return []
 
-  // Fetch recent audit log entries (last 30 days, up to 50 — we'll filter to top 15 after labeling)
-  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+  // Geen tijdvenster meer. Dat stond op 30 dagen, en een installateur met een
+  // rustige maand keek daardoor naar een leeg dashboard terwijl er wel degelijk
+  // iets te zien was. Bij lage volumes is "de laatste 15 gebeurtenissen"
+  // bruikbaarder dan "alles van de afgelopen maand, mogelijk niets".
   const { data: rows } = await supabase
     .from('audit_log')
     .select('id, action, entity_type, entity_id, meta, created_at')
     .eq('partner_id', partnerId)
-    .gte('created_at', since)
+    .in('action', TOONBARE_ACTIES)
     .order('created_at', { ascending: false })
-    .limit(50)
+    .limit(40)
 
   if (!rows?.length) return []
 
@@ -145,9 +165,13 @@ export default defineEventHandler(async (event) => {
     const described = describe(r.action, r.entity_type, r.meta, customerName)
     if (!described) continue
 
-    // Build deep-link
+    // Deep-link. Een servicemelding wint van de klantpagina: klik je op
+    // "nieuwe servicemelding", dan wil je die melding zien, niet het dossier.
     let link: string | null = null
-    if (r.entity_type === 'service_ticket' && r.entity_id) link = `/admin/service/${r.entity_id}`
+    const ticketId = (r.entity_type === 'service_ticket' && r.entity_id)
+      ? r.entity_id
+      : (r.meta?.ticket_id || null)
+    if (ticketId) link = `/admin/service/${ticketId}`
     else if (customerId) link = `/admin/customers/${customerId}`
 
     out.push({
