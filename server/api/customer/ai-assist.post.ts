@@ -1,17 +1,26 @@
 import { getServiceRoleClient } from '~~/server/utils/supabase'
 import { SUNDATA_BASE_URL, sundataSession } from '~~/server/utils/sundata'
+import { getAnthropic, isAiAvailable, AI_MODEL, AI_MAX_TOKENS } from '~~/server/utils/ai'
+import {
+  getCustomerProducts, getKbArticles, getPastTickets, renderContext, normalizeModule,
+} from '~~/server/utils/ai-context'
 
 /**
- * Customer-facing AI helper.
+ * De servicechat van de klant.
  *
- * Matches the customer's question against known topics (solar, heat pump, EV,
- * invoicing, appointment, cancellation) and returns a helpful reply. For solar
- * questions we enrich the reply with live Sundata yield data so the customer
- * sees real numbers for their own system.
+ * Alle serviceverzoeken lopen hierlangs. Het doel is niet om zoveel mogelijk
+ * tickets te voorkomen, maar om een ticket af te leveren waar de monteur iets
+ * mee kan. "Zonnepaneel is kapot" kost een telefoontje voordat er iemand kan
+ * rijden; "sinds dinsdag geen productie, omvormer knippert rood, display toont
+ * E013" niet.
  *
- * When the question can't be answered automatically, `shouldEscalate: true` is
- * returned so the UI can offer a "persoonlijk contact"-button that creates a
- * real service ticket.
+ * Vandaar dat het model doorvraagt vóór het escaleert. Het krijgt daarbij mee:
+ * welke producten de klant heeft en of ze gekoppeld zijn, de actuele meetdata,
+ * de storingsartikelen uit de kennisbank, en hoe vergelijkbare klachten eerder
+ * zijn opgelost.
+ *
+ * Zonder ANTHROPIC_API_KEY valt alles terug op de oude trefwoordregels
+ * (ruleBasedReply). Die zijn beperkt, maar beter dan een foutmelding.
  */
 interface AiReply {
   content: string
@@ -19,7 +28,12 @@ interface AiReply {
   dataPoints: { label: string; value: string }[]
   shouldEscalate: boolean
   escalateReason?: string
+  /** Door het model opgestelde ticketinhoud, klaar om aan te maken. */
+  ticketDraft?: { subject: string; description: string; urgency: string; module_type: string | null }
+  source: 'ai' | 'rules'
 }
+
+interface InkomendBericht { role: 'user' | 'assistant'; content: string }
 
 function matchesAny(text: string, keywords: string[]): boolean {
   return keywords.some(kw => text.includes(kw))
@@ -66,30 +80,122 @@ async function fetchSolarContext(event: any, customerId: string, partnerId: stri
     const days: any[] = monthData?.data || []
     const todayEntry = days.find((d: any) => (d.time || '').startsWith(today))
     const monthSum = days.reduce((s, d) => s + (d.yield_in_wh || 0), 0)
+
+    // Laatste dag mét opbrengst. Juist dát is het signaal bij een storing: als
+    // dat drie dagen geleden was, is er iets aan de hand.
+    const metOpbrengst = days.filter(d => (d.yield_in_wh || 0) > 0)
+    const laatsteProductie = metOpbrengst.length ? metOpbrengst[metOpbrengst.length - 1].time : null
+
     return {
       peakInWatt: meter?.peak_in_watt,
-      orientationDeg: meter?.orientation_in_degrees,
-      tiltDeg: meter?.angle_in_degrees,
       operationalSince: meter?.operational_since,
       todayWh: todayEntry?.yield_in_wh || 0,
       monthWh: monthSum,
-      hasData: days.some(d => (d.yield_in_wh || 0) > 0),
+      hasData: metOpbrengst.length > 0,
+      laatsteProductie,
     }
   } catch {
     return null
   }
 }
 
+// ---------------------------------------------------------------------------
+// Terugvalpad: de oorspronkelijke trefwoordregels.
+// ---------------------------------------------------------------------------
+function ruleBasedReply(msg: string, partnerName: string, solarCtx: any, hintedModule: string | null): AiReply {
+  const basis = { systemCheck: false, dataPoints: [], shouldEscalate: false, source: 'rules' as const }
+
+  if (hintedModule === 'solar' || matchesAny(msg, ['opbrengst', 'productie', 'panelen', 'zonnepaneel', 'zonnepanelen', 'solar', 'omvormer'])) {
+    if (!solarCtx) {
+      return {
+        ...basis,
+        content: `Ik kan nog geen meetgegevens van je zonnepanelen ophalen. Je installatie is mogelijk nog niet gekoppeld. Wil je dat ik dit doorstuur naar ${partnerName}?`,
+        shouldEscalate: true,
+        escalateReason: 'Vraag over zonnepanelen maar koppeling ontbreekt',
+      }
+    }
+    return {
+      ...basis,
+      content: `Vandaag is er ${formatKwh(solarCtx.todayWh)} opgewekt, deze maand ${formatKwh(solarCtx.monthWh)}. Klopt dat niet met wat je verwacht? Dan stuur ik het door naar ${partnerName}.`,
+      systemCheck: true,
+      dataPoints: [
+        { label: 'Vandaag', value: formatKwh(solarCtx.todayWh) },
+        { label: 'Deze maand', value: formatKwh(solarCtx.monthWh) },
+      ],
+    }
+  }
+
+  if (matchesAny(msg, ['opzeggen', 'stoppen', 'annuleren', 'beëindigen'])) {
+    return {
+      ...basis,
+      content: `Een wijziging of opzegging van je servicecontract regel ik niet zelf. Ik stuur je vraag door naar ${partnerName}.`,
+      shouldEscalate: true,
+      escalateReason: 'Klant wil servicecontract wijzigen/opzeggen',
+    }
+  }
+
+  if (matchesAny(msg, ['bedankt', 'dankjewel', 'top', 'opgelost', 'helder', 'duidelijk', 'geholpen'])) {
+    return { ...basis, content: 'Graag gedaan! Als er nog iets is, stel gerust een nieuwe vraag.' }
+  }
+
+  return {
+    ...basis,
+    content: `Bedankt voor je bericht. Ik stuur je vraag door naar ${partnerName}. Zij reageren doorgaans binnen 1 werkdag.`,
+    shouldEscalate: true,
+    escalateReason: 'Vraag niet automatisch te beantwoorden',
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+const SYSTEEMPROMPT = `Je bent de servicemedewerker van {{PARTNER}}, een installatiebedrijf. Je helpt {{KLANT}} via de chat in hun klantportaal.
+
+## Je opdracht
+
+Achterhaal wát er precies aan de hand is, voordat er een monteur bij gehaald wordt. Een monteur die langskomt met "zonnepanelen kapot" moet ter plekke nog alles uitzoeken. Jij zorgt dat er in plaats daarvan staat: sinds wanneer, welk symptoom, welke foutcode, wat de klant al geprobeerd heeft.
+
+## Hoe je dat doet
+
+Stel **één vraag tegelijk**. Een rijtje van vier vragen leest als een formulier en dan krijg je één antwoord op de laatste.
+
+Begin bij het symptoom, niet bij de oorzaak. "Wat zie je precies?" komt vóór "is de omvormer defect?".
+
+Vraag door tot je weet: sinds wanneer, wat de klant waarneemt (lampjes, geluid, display, foutcode), of het steeds gebeurt of af en toe, en wat er eventueel veranderd is. Meestal ben je er in twee tot vier vragen.
+
+Gebruik de meetgegevens die je krijgt. Zie je dat er sinds dinsdag geen productie meer is, benoem dat — dan hoeft de klant het niet zelf te ontdekken. Verzin nooit metingen die je niet hebt gekregen.
+
+Staat er in de kennisbank een stap die de klant zelf kan zetten, leg die dan uit en vraag of het hielp. Veel storingen zijn een gevallen zekering of een omvormer die opnieuw opgestart moet worden.
+
+## Wanneer je doorstuurt
+
+Roep \`escalate_to_installer\` aan zodra je genoeg weet, én in deze gevallen meteen:
+- de klant vraagt erom, of is duidelijk klaar met vragen
+- er is gevaar: brandlucht, rook, water bij elektra, een hete of gezwollen batterij
+- het gaat over contract, opzegging, facturen of een afspraak
+- na vier vragen ben je er nog niet uit
+
+Schrijf de \`description\` alsof je 'm aan de monteur overdraagt: symptoom, sinds wanneer, waarneming van de klant, wat al geprobeerd is, en wat de meetgegevens laten zien. Vat samen wat de klant je vertelde — verzin niets bij.
+
+Bij gevaar: zeg eerst wat de klant nu moet doen, en escaleer met urgency 'hoog'.
+
+## Toon
+
+Nederlands, je-vorm, warm en kort. Geen jargon zonder uitleg: zeg "de kast waar je zonnepanelen op aangesloten zijn" in plaats van "de omvormer", tenzij de klant dat woord zelf gebruikt. Geen opsommingen van drie regels als één zin volstaat. Beloof nooit een tijdstip of een prijs.
+
+Je bent niet van UPsol en noemt UPsol niet. Je werkt namens {{PARTNER}}.`
+
 export default defineEventHandler(async (event): Promise<AiReply> => {
   const user = await requireAuth(event)
   const supabase = getServiceRoleClient(event)
   const body = await readBody(event)
-  const message: string = (body?.message || '').toString().trim()
+
+  // Nieuw formaat is een berichtenreeks; het oude single-message formaat blijft
+  // werken zodat een openstaand tabblad tijdens een deploy niet stukgaat.
+  const history: InkomendBericht[] = Array.isArray(body?.messages) ? body.messages : []
+  const message: string = (body?.message || history[history.length - 1]?.content || '').toString().trim()
   const hintedModule: string | null = body?.moduleType || null
 
-  if (!message) {
-    throw createError({ statusCode: 400, message: 'Bericht is verplicht' })
-  }
+  if (!message) throw createError({ statusCode: 400, message: 'Bericht is verplicht' })
 
   const { data: customer } = await supabase
     .from('customers')
@@ -104,98 +210,103 @@ export default defineEventHandler(async (event): Promise<AiReply> => {
   const partnerName = partner?.name || 'je installateur'
   const msg = message.toLowerCase()
 
-  // --- Solar / zonnepanelen ---
-  if (hintedModule === 'solar' || matchesAny(msg, ['opbrengst', 'productie', 'panelen', 'zonnepaneel', 'zonnepanelen', 'solar', 'weinig opgewekt', 'minder stroom', 'omvormer'])) {
-    const ctx = customer ? await fetchSolarContext(event, customer.id, customer.partner_id) : null
-    if (!ctx) {
+  const solarCtx = customer ? await fetchSolarContext(event, customer.id, customer.partner_id) : null
+
+  if (!isAiAvailable() || !customer) {
+    return ruleBasedReply(msg, partnerName, solarCtx, hintedModule)
+  }
+
+  // --- Context verzamelen ---------------------------------------------------
+  const moduleType = normalizeModule(hintedModule)
+    || (matchesAny(msg, ['paneel', 'panelen', 'zonne', 'omvormer', 'opbrengst']) ? 'solar_panel'
+      : matchesAny(msg, ['warmtepomp', 'verwarming', 'radiator', 'vloerverwarming']) ? 'heat_pump'
+      : matchesAny(msg, ['laadpaal', 'laden', 'laadpunt', 'auto']) ? 'ev_charger'
+      : matchesAny(msg, ['batterij', 'accu', 'thuisbatterij']) ? 'battery'
+      : null)
+
+  const [products, articles, pastTickets] = await Promise.all([
+    getCustomerProducts(event, customer.id),
+    getKbArticles(event, moduleType),
+    getPastTickets(event, customer.partner_id, moduleType, customer.id),
+  ])
+
+  const live: { label: string; value: string }[] = []
+  if (solarCtx) {
+    live.push({ label: 'Zonnepanelen vandaag', value: formatKwh(solarCtx.todayWh) })
+    live.push({ label: 'Zonnepanelen deze maand', value: formatKwh(solarCtx.monthWh) })
+    if (solarCtx.peakInWatt) live.push({ label: 'Vermogen installatie', value: `${(solarCtx.peakInWatt / 1000).toFixed(1)} kWp` })
+    live.push({
+      label: 'Laatste dag met productie',
+      value: solarCtx.laatsteProductie ? String(solarCtx.laatsteProductie).slice(0, 10) : 'geen productie deze maand',
+    })
+  }
+
+  const systeem = SYSTEEMPROMPT
+    .replaceAll('{{PARTNER}}', partnerName)
+    .replaceAll('{{KLANT}}', customer.full_name || 'de klant')
+    + '\n\n# Wat je over deze klant weet\n\n'
+    + renderContext({ products, articles, pastTickets }, live)
+
+  const messages = (history.length ? history : [{ role: 'user' as const, content: message }])
+    .filter(m => m && typeof m.content === 'string' && m.content.trim())
+    .slice(-12)   // genoeg voor de diagnose, en houdt de kosten voorspelbaar
+    .map(m => ({ role: m.role === 'assistant' ? 'assistant' as const : 'user' as const, content: m.content }))
+
+  // --- Claude ---------------------------------------------------------------
+  try {
+    const response = await getAnthropic().messages.create({
+      model: AI_MODEL,
+      max_tokens: AI_MAX_TOKENS,
+      system: systeem,
+      messages,
+      tools: [{
+        name: 'escalate_to_installer',
+        description: 'Maak een serviceticket aan voor de installateur. Roep dit aan zodra je genoeg weet om de monteur op weg te helpen, of direct bij gevaar, contractvragen of als de klant erom vraagt.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            subject: { type: 'string', description: 'Korte omschrijving van de klacht, max 80 tekens. Concreet: "Geen productie sinds 3 sept, omvormer knippert rood" — niet "Probleem met zonnepanelen".' },
+            description: { type: 'string', description: 'Overdracht aan de monteur: symptoom, sinds wanneer, waarneming van de klant, wat al geprobeerd is, en wat de meetgegevens laten zien.' },
+            urgency: { type: 'string', enum: ['laag', 'normaal', 'hoog'], description: "'hoog' bij gevaar of volledige uitval, 'laag' bij een vraag zonder storing." },
+            module_type: { type: 'string', enum: ['solar_panel', 'heat_pump', 'ev_charger', 'battery', 'other'] },
+          },
+          required: ['subject', 'description', 'urgency'],
+        },
+      }],
+    })
+
+    const tekst = response.content.filter(c => c.type === 'text').map((c: any) => c.text).join('\n').trim()
+    const tool = response.content.find((c: any) => c.type === 'tool_use') as any
+
+    if (tool?.name === 'escalate_to_installer') {
+      const inp = tool.input || {}
       return {
-        content: `Ik kan nog geen meetgegevens van je zonnepanelen ophalen. Je installatie is mogelijk nog niet gekoppeld, of er is nog geen data beschikbaar. Wil je dat ik dit doorstuur naar ${partnerName}?`,
-        systemCheck: false, dataPoints: [], shouldEscalate: true,
-        escalateReason: 'Klant heeft vraag over zonnepanelen maar koppeling ontbreekt',
+        content: tekst || `Ik heb genoeg om je melding door te zetten naar ${partnerName}. Zal ik dat doen?`,
+        systemCheck: !!solarCtx,
+        dataPoints: live.slice(0, 3),
+        shouldEscalate: true,
+        escalateReason: inp.subject,
+        ticketDraft: {
+          subject: String(inp.subject || 'Serviceverzoek').slice(0, 120),
+          description: String(inp.description || ''),
+          urgency: ['laag', 'normaal', 'hoog'].includes(inp.urgency) ? inp.urgency : 'normaal',
+          module_type: inp.module_type && inp.module_type !== 'other' ? inp.module_type : moduleType,
+        },
+        source: 'ai',
       }
     }
-    if (!ctx.hasData) {
-      return {
-        content: `Je installatie is gekoppeld (${(ctx.peakInWatt / 1000).toFixed(1)} kWp, operationeel sinds ${ctx.operationalSince || 'recent'}), maar er komt nog geen meetdata binnen. Dat kan tot 24 uur duren na de eerste koppeling. Duurt het langer? Laat het me weten dan schakel ik ${partnerName} in.`,
-        systemCheck: true,
-        dataPoints: [
-          { label: 'Vermogen', value: `${(ctx.peakInWatt / 1000).toFixed(1)} kWp` },
-          { label: 'Status', value: 'Wachten op data' },
-          { label: 'Sinds', value: ctx.operationalSince || '—' },
-        ],
-        shouldEscalate: false,
-      }
-    }
+
     return {
-      content: `Ik heb je zonnepanelen gecheckt. Je systeem is gekoppeld en actief. Vandaag is er ${formatKwh(ctx.todayWh)} opgewekt, deze maand ${formatKwh(ctx.monthWh)}. Lijkt dat afwijkend van wat je verwacht? Dat kan komen door bewolking, schaduw of de tijd van het jaar — op deze schaal is één dag niet altijd representatief.`,
-      systemCheck: true,
-      dataPoints: [
-        { label: 'Vandaag', value: formatKwh(ctx.todayWh) },
-        { label: 'Deze maand', value: formatKwh(ctx.monthWh) },
-        { label: 'Vermogen', value: `${(ctx.peakInWatt / 1000).toFixed(1)} kWp` },
-      ],
+      content: tekst || 'Kun je dat iets uitgebreider omschrijven?',
+      systemCheck: !!solarCtx,
+      dataPoints: live.slice(0, 3),
       shouldEscalate: false,
+      source: 'ai',
     }
-  }
-
-  // --- Heat pump ---
-  if (hintedModule === 'heat_pump' || matchesAny(msg, ['warmtepomp', 'verwarming', 'koud', 'warm', 'temperatuur', 'tikt', 'bromm', 'buitenunit'])) {
-    const hasIssue = matchesAny(msg, ['storing', 'geluid', 'tikt', 'bromm', 'kapot', 'fout', 'werkt niet', 'lekt'])
-    return {
-      content: hasIssue
-        ? `Dat klinkt als iets wat technische inspectie vereist. Ik kan de warmtepomp-monitoring nog niet live uitlezen — laat me dit doorsturen naar ${partnerName} zodat een monteur kan kijken. Heb je al een idee wanneer het begon?`
-        : `Voor je warmtepomp heb ik nog geen live monitoring beschikbaar. Wil je informatie over instellingen of onderhoud? Dan verwijs ik je door naar ${partnerName}.`,
-      systemCheck: false, dataPoints: [], shouldEscalate: hasIssue,
-      escalateReason: hasIssue ? 'Mogelijk warmtepomp-storing' : undefined,
-    }
-  }
-
-  // --- EV charger ---
-  if (hintedModule === 'ev_charger' || matchesAny(msg, ['laadpaal', 'laden', 'opladen', 'auto', 'charger', 'easee'])) {
-    return {
-      content: `Voor je laadpaal heb ik nog geen live monitoring. Voor vragen over laadmodi, slim laden of laadgedrag kan ${partnerName} je het beste helpen. Wil je dat ik het doorstuur?`,
-      systemCheck: false, dataPoints: [], shouldEscalate: false,
-    }
-  }
-
-  // --- Invoice ---
-  if (matchesAny(msg, ['factuur', 'betaling', 'incasso', 'kosten', 'prijs', 'bedrag', 'rekening', 'duur'])) {
-    return {
-      content: `Je facturen vind je in je account onder "Facturen". Als je een bedrag niet herkent of de incasso is geweigerd, dan help ik je door te verwijzen naar ${partnerName}. Zal ik dat doen?`,
-      systemCheck: false, dataPoints: [], shouldEscalate: false,
-    }
-  }
-
-  // --- Cancel ---
-  if (matchesAny(msg, ['opzeggen', 'stoppen', 'annuleren', 'beëindigen'])) {
-    return {
-      content: `Een wijziging of opzegging van je servicecontract regel ik niet zelf. Ik stuur je vraag door naar ${partnerName} — zij nemen persoonlijk contact met je op.`,
-      systemCheck: false, dataPoints: [], shouldEscalate: true,
-      escalateReason: 'Klant wil servicecontract wijzigen/opzeggen',
-    }
-  }
-
-  // --- Appointment ---
-  if (matchesAny(msg, ['afspraak', 'monteur', 'langskomen', 'bezoek', 'inspectie', 'onderhoud'])) {
-    return {
-      content: `Ik plan graag een afspraak voor je in. Ik stuur je verzoek door naar ${partnerName}, zij nemen contact op voor een passend moment.`,
-      systemCheck: false, dataPoints: [], shouldEscalate: true,
-      escalateReason: 'Klant wil afspraak inplannen',
-    }
-  }
-
-  // --- Thanks / resolved ---
-  if (matchesAny(msg, ['bedankt', 'dankjewel', 'top', 'opgelost', 'helder', 'duidelijk', 'geholpen', 'prima'])) {
-    return {
-      content: 'Graag gedaan! Als er nog iets is kun je altijd een nieuwe vraag stellen. Fijne dag!',
-      systemCheck: false, dataPoints: [], shouldEscalate: false,
-    }
-  }
-
-  // --- Fallback ---
-  return {
-    content: `Bedankt voor je bericht. Ik kan hier zelf niet direct op antwoorden. Als je wilt stuur ik je vraag door naar ${partnerName}. Zij reageren doorgaans binnen 1 werkdag.`,
-    systemCheck: false, dataPoints: [], shouldEscalate: true,
-    escalateReason: 'Vraag niet automatisch te beantwoorden',
+  } catch (e: any) {
+    // Rate limit, storing bij Anthropic, ontbrekend krediet — de klant hoort
+    // daar niets van te merken behalve een wat botter antwoord.
+    console.error('[ai-assist] Claude-aanroep mislukt:', e?.message)
+    return ruleBasedReply(msg, partnerName, solarCtx, hintedModule)
   }
 })

@@ -16,23 +16,37 @@ export default defineEventHandler(async (event) => {
   const search = String(q.q || '').trim()
   const category = String(q.category || '').trim()
 
-  let query = supabase
-    .from('support_articles')
-    .select('id, slug, title, excerpt, category, tags, sort_order, published_at, updated_at')
-    .not('published_at', 'is', null)
-    .order('sort_order', { ascending: true })
-    .order('title', { ascending: true })
+  // /support is de handleiding voor installateurs. De klantgerichte
+  // storingsartikelen (audience='customer') horen daar niet tussen; die worden
+  // alleen door de AI-servicechat geraadpleegd.
+  //
+  // Het filter staat los omdat de audience-kolom uit migratie 031 komt. Draait
+  // die nog niet, dan tonen we liever de hele lijst dan een kapotte /support.
+  function bouwQuery(metAudience: boolean) {
+    let query = supabase
+      .from('support_articles')
+      .select('id, slug, title, excerpt, category, tags, sort_order, published_at, updated_at')
+      .not('published_at', 'is', null)
+      .order('sort_order', { ascending: true })
+      .order('title', { ascending: true })
 
-  if (category) query = query.eq('category', category)
-  if (search) {
-    // Escape PostgREST-special chars, cap length
-    const s = search.replace(/[,()%\\]/g, '').slice(0, 80)
-    query = query.or(
-      `title.ilike.%${s}%,excerpt.ilike.%${s}%,body_md.ilike.%${s}%`,
-    )
+    if (metAudience) query = query.eq('audience', 'partner')
+    if (category) query = query.eq('category', category)
+    if (search) {
+      // Escape PostgREST-special chars, cap length
+      const s = search.replace(/[,()%\\]/g, '').slice(0, 80)
+      query = query.or(
+        `title.ilike.%${s}%,excerpt.ilike.%${s}%,body_md.ilike.%${s}%`,
+      )
+    }
+    return query.limit(200)
   }
 
-  const { data, error } = await query.limit(200)
+  let { data, error } = await bouwQuery(true)
+  if (error?.message?.includes('audience')) {
+    console.warn('[support] audience-kolom ontbreekt — migratie 031 nog niet gedraaid')
+    ;({ data, error } = await bouwQuery(false))
+  }
   if (error) throw createError({ statusCode: 500, message: error.message })
   const articles = data || []
 

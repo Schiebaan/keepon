@@ -14,12 +14,20 @@ export default defineEventHandler(async (event) => {
   const slug = getRouterParam(event, 'slug')
   if (!slug) throw createError({ statusCode: 400, message: 'slug ontbreekt' })
 
-  const { data, error } = await supabase
-    .from('support_articles')
-    .select('id, slug, title, excerpt, body_md, category, tags, published_at, updated_at')
-    .eq('slug', slug)
-    .not('published_at', 'is', null)
-    .single()
+  // Zie articles.get.ts: het audience-filter komt uit migratie 031 en valt
+  // terug op de ongefilterde query zolang die nog niet gedraaid is.
+  const kolommen = 'id, slug, title, excerpt, body_md, category, tags, published_at, updated_at'
+  function bouwQuery(metAudience: boolean) {
+    let q = supabase.from('support_articles').select(kolommen).eq('slug', slug).not('published_at', 'is', null)
+    if (metAudience) q = q.eq('audience', 'partner')
+    return q.single()
+  }
+
+  let { data, error } = await bouwQuery(true)
+  if (error?.message?.includes('audience')) {
+    console.warn('[support] audience-kolom ontbreekt — migratie 031 nog niet gedraaid')
+    ;({ data, error } = await bouwQuery(false))
+  }
 
   if (error || !data) {
     if (error?.code === 'PGRST116') throw createError({ statusCode: 404, message: 'Artikel niet gevonden' })

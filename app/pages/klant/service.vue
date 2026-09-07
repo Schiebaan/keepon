@@ -34,6 +34,8 @@ interface AiMsg {
     dataPoints?: { label: string; value: string }[]
     shouldEscalate?: boolean
     escalateReason?: string
+    /** Door de assistent opgestelde ticketinhoud, zodra 'ie genoeg weet. */
+    ticketDraft?: { subject: string; description: string; urgency: string; module_type: string | null }
   }
 }
 
@@ -146,11 +148,17 @@ const unreadCount = computed(() => tickets.value.filter(isUnread).length)
 // --- AI chat flow ---
 async function callAi(question: string, moduleType: string | null): Promise<AiMsg> {
   const headers = await authHeaders()
+  // De hele dialoog meesturen, niet alleen het laatste bericht. Anders leest de
+  // assistent het antwoord op zijn eigen vervolgvraag als een nieuwe, losse
+  // vraag — en kan hij dus per definitie niet doorvragen.
+  const history = (activeChat.value?.messages || [])
+    .filter(m => m.role === 'customer' || m.role === 'ai')
+    .map(m => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.content }))
   try {
     const reply = await $fetch<any>('/api/customer/ai-assist', {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: { message: question, moduleType },
+      body: { message: question, moduleType, messages: history },
     })
     return {
       id: `ai-${Date.now()}`,
@@ -162,6 +170,7 @@ async function callAi(question: string, moduleType: string | null): Promise<AiMs
         dataPoints: reply.dataPoints,
         shouldEscalate: reply.shouldEscalate,
         escalateReason: reply.escalateReason,
+        ticketDraft: reply.ticketDraft,
       },
     }
   } catch {
@@ -228,18 +237,29 @@ async function escalateChat() {
   const chat = activeChat.value
   try {
     const lastAi = [...chat.messages].reverse().find(m => m.role === 'ai')
-    const customerLines = chat.messages.filter(m => m.role === 'customer').map(m => m.content).join('\n\n')
-    const aiLines = lastAi ? `\n\n— AI-samenvatting —\n${lastAi.content}` : ''
-    const description = customerLines + aiLines
+
+    // Heeft de assistent doorgevraagd, dan is zijn samenvatting het ticket. Die
+    // bevat symptoom, sinds wanneer en wat al geprobeerd is — waar de monteur
+    // iets aan heeft. Alleen als die ontbreekt vallen we terug op de ruwe
+    // chatregels, wat neerkomt op "zonnepaneel is kapot".
+    const draft = lastAi?.metadata?.ticketDraft
+    const transcript = chat.messages
+      .filter(m => m.role === 'customer' || m.role === 'ai')
+      .map(m => `${m.role === 'ai' ? 'Assistent' : 'Klant'}: ${m.content}`)
+      .join('\n')
+
+    const description = draft?.description
+      ? `${draft.description}\n\n— Gespreksverloop —\n${transcript}`
+      : transcript
 
     const ticket = await $fetch<Ticket>('/api/customer/tickets', {
       method: 'POST',
       headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
       body: {
-        subject: chat.subject,
+        subject: draft?.subject || chat.subject,
         description,
-        module_type: chat.moduleType || null,
-        urgency: lastAi?.metadata?.escalateReason?.includes('storing') ? 'hoog' : 'normaal',
+        module_type: draft?.module_type || chat.moduleType || null,
+        urgency: draft?.urgency || 'normaal',
       },
     })
 

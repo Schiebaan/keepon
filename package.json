@@ -12,6 +12,7 @@
     "postinstall": "node scripts/patch-nuxt-cli.mjs && nuxt prepare"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.124.0",
     "@mollie/api-client": "^4.5.0",
     "@nuxtjs/supabase": "^2.0.3",
     "@supabase/supabase-js": "^2.95.2",
