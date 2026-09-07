@@ -400,6 +400,74 @@ export function buildTicketResolvedEmail(data: TicketResolvedEmailData) {
   return { subject, html: baseLayout(content, data.partner) }
 }
 
+
+// ---- Storingsoverzicht (naar de installateur) ----
+interface DeviceAlertDigestData {
+  alerts: { customerName: string; productName: string; detail: string; kind: string }[]
+  dashboardUrl: string
+  partner?: { name: string; primary_color: string; logo_url?: string }
+}
+
+const ALERT_LABELS: Record<string, string> = {
+  error: 'Storing',
+  unreachable: 'Niet bereikbaar',
+  stale: 'Geen data',
+  integration_down: 'Koppeling stuk',
+}
+
+/**
+ * Eén mail per dag met alleen de nieuw gedetecteerde storingen.
+ *
+ * Bewust geen mail per storing en geen herhaling van wat gisteren al gemeld
+ * was: een dagelijkse mail die telkens dezelfde drie regels bevat wordt binnen
+ * een week ongelezen weggeklikt, en dan mis je juist de nieuwe.
+ */
+export function buildDeviceAlertDigestEmail(data: DeviceAlertDigestData) {
+  const n = data.alerts.length
+  const partnerName = data.partner?.name || 'je installaties'
+
+  const rijen = data.alerts.map(a => `
+    <tr>
+      <td style="padding:10px 12px; border-bottom:1px solid #f3f4f6; vertical-align:top;">
+        <strong style="color:#111827;">${escapeHtml(a.customerName)}</strong><br>
+        <span style="color:#6b7280; font-size:13px;">${escapeHtml(a.productName)}</span>
+      </td>
+      <td style="padding:10px 12px; border-bottom:1px solid #f3f4f6; vertical-align:top; font-size:13px; color:#374151;">
+        <span style="display:inline-block; background:#fef2f2; color:#b91c1c; border-radius:9999px; padding:2px 8px; font-size:11px; font-weight:600; margin-bottom:4px;">
+          ${escapeHtml(ALERT_LABELS[a.kind] || a.kind)}
+        </span><br>
+        ${escapeHtml(a.detail)}
+      </td>
+    </tr>`).join('')
+
+  const content = `
+    <h1>${n} nieuwe ${n === 1 ? 'storing' : 'storingen'}</h1>
+    <p>We hebben bij ${escapeHtml(partnerName)} ${n === 1 ? 'een installatie' : n + ' installaties'} gevonden die aandacht ${n === 1 ? 'vraagt' : 'vragen'}.</p>
+
+    <table style="width:100%; border-collapse:collapse; margin:20px 0; border:1px solid #f3f4f6; border-radius:8px; overflow:hidden;">
+      ${rijen}
+    </table>
+
+    <p style="text-align:center; margin: 28px 0;">
+      <a href="${data.dashboardUrl}" class="btn">Bekijk op je dashboard</a>
+    </p>
+
+    <hr class="divider">
+    <p style="font-size:13px; color:#9ca3af; line-height:1.55;">
+      Je krijgt deze mail alleen bij <strong style="color:#6b7280;">nieuwe</strong> storingen.
+      Een melding die blijft staan komt niet elke dag opnieuw langs; die vind je
+      op je dashboard. Herstelt een installatie zichzelf, dan verdwijnt de
+      melding vanzelf.
+    </p>`
+
+  return {
+    subject: n === 1
+      ? `1 nieuwe storing gedetecteerd`
+      : `${n} nieuwe storingen gedetecteerd`,
+    html: baseLayout(content, data.partner),
+  }
+}
+
 // ---- New ticket notification (to installer / partner support inbox) ----
 interface NewTicketEmailData {
   customerName: string

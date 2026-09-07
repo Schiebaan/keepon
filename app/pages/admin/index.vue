@@ -117,11 +117,40 @@ function activityIconBg(type: string) {
   }
 }
 
-// System alerts — will be populated from real subscription data later
-const systemAlerts = computed(() => {
-  const alerts: { id: string; customer: string; customerId: string; type: 'error' | 'warning'; module: string; message: string; icon: string }[] = []
-  return alerts
-})
+// Openstaande storingen op gekoppelde installaties. Stond hier hardcoded op
+// een lege lijst met "later"; er werd dan ook niets gedetecteerd. De
+// cron-taak check-alerts vult device_alerts nu periodiek.
+interface DeviceAlert {
+  id: string
+  kind: 'error' | 'unreachable' | 'stale'
+  detail: string
+  since: string
+  customerId: string
+  customerName: string
+  productName: string
+  category: string | null
+}
+const systemAlerts = ref<DeviceAlert[]>([])
+
+async function loadAlerts() {
+  try {
+    const supabase = useSupabaseClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) return
+    systemAlerts.value = await $fetch<DeviceAlert[]>('/api/partners/alerts', {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+  } catch {
+    // Achtergrondverversing: laatst bekende lijst laten staan.
+  }
+}
+
+const ALERT_LABELS: Record<string, string> = {
+  error: 'Storing',
+  unreachable: 'Niet bereikbaar',
+  stale: 'Geen data',
+  integration_down: 'Koppeling stuk',
+}
 
 // --- Module breakdown: live counts per category ---
 interface ModuleStat { total: number; monitored: number }
@@ -145,11 +174,12 @@ async function loadModuleStats() {
 
 onMounted(loadModuleStats)
 onMounted(loadCustomerCount)
+onMounted(loadAlerts)
 
 // Het dashboard laadde alles één keer in onMounted en daarna nooit meer. Wie
 // het scherm open liet staan keek naar cijfers van uren geleden.
 const { lastRefreshed } = useLiveRefresh(
-  () => Promise.all([loadActivity(), loadModuleStats(), loadCustomerCount()]),
+  () => Promise.all([loadActivity(), loadModuleStats(), loadCustomerCount(), loadAlerts()]),
   { intervalMs: 60_000 },
 )
 const bijgewerkt = useRelativeTime(lastRefreshed)
@@ -258,26 +288,28 @@ const totalActiveModules = computed(() =>
           v-for="alert in systemAlerts"
           :key="alert.id"
           :to="`/admin/customers/${alert.customerId}`"
-          class="flex items-center gap-4 rounded-xl border p-4 transition-all hover:shadow-sm"
-          :class="alert.type === 'error' ? 'border-red-200 bg-red-50/50' : 'border-amber-200 bg-amber-50/50'"
+          class="flex items-center gap-4 rounded-xl border p-4 transition-all hover:shadow-sm no-underline"
+          :class="alert.kind === 'stale' ? 'border-amber-200 bg-amber-50/50' : 'border-red-200 bg-red-50/50'"
         >
           <div
             class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
-            :class="alert.type === 'error' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'"
+            :class="alert.kind === 'stale' ? 'bg-amber-100 text-amber-600' : 'bg-red-100 text-red-600'"
           >
-            <AppIcon :name="alert.icon" :size="20" />
+            <AppIcon :name="alert.kind === 'stale' ? 'clock' : 'warning'" :size="20" />
           </div>
           <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-2">
-              <p class="text-sm font-medium text-gray-900">{{ alert.customer }}</p>
+            <div class="flex items-center gap-2 flex-wrap">
+              <p class="text-sm font-medium text-gray-900">{{ alert.customerName }}</p>
               <span
                 class="rounded-full px-2 py-0.5 text-[10px] font-medium"
-                :class="alert.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'"
+                :class="alert.kind === 'stale' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'"
               >
-                {{ alert.module }}
+                {{ ALERT_LABELS[alert.kind] || alert.kind }}
               </span>
+              <span class="text-[11px] text-gray-500">{{ alert.productName }}</span>
             </div>
-            <p class="text-xs text-gray-600 mt-0.5">{{ alert.message }}</p>
+            <p class="text-xs text-gray-600 mt-0.5">{{ alert.detail }}</p>
+            <p class="text-[11px] text-gray-400 mt-0.5">Gesignaleerd {{ timeAgo(alert.since) }}</p>
           </div>
           <AppIcon name="chevron-right" :size="16" class="text-gray-300 shrink-0" />
         </NuxtLink>
