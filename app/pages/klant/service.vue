@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { personalSenderName } from '~~/shared/utils/sender-name'
 import { formatTicketRef } from '~/utils/formatters'
 
 definePageMeta({ layout: 'customer', middleware: ['auth', 'customer-onboarding'] })

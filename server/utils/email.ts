@@ -1,3 +1,4 @@
+import { senderLabel as buildSenderLabel } from '~~/shared/utils/sender-name'
 import { Resend } from 'resend'
 
 let resendClient: Resend | null = null
@@ -288,9 +289,10 @@ interface TicketReplyEmailData {
 export function buildTicketReplyEmail(data: TicketReplyEmailData) {
   const firstName = (data.customerName || '').split(' ')[0] || 'daar'
   const partnerName = data.partner?.name || 'je installateur'
-  const author = (data.authorName || '').trim()
-  // "Rik van Volt4U" vs "Volt4U" — afhankelijk van of de naam bekend is
-  const senderLabel = author ? `${author} van ${partnerName}` : partnerName
+  // "Rik van Volt4U" vs "Volt4U". Werkt de installateur vanaf een gedeeld
+  // account dat naar het bedrijf heet, dan laat de helper de persoonsnaam weg —
+  // anders krijg je "Volt4u van Volt4U".
+  const senderLabel = buildSenderLabel(data.authorName, partnerName)
   const excerpt = (data.replyExcerpt || '').trim().slice(0, 240)
 
   const refLine = data.ticketRef
