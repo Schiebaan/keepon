@@ -79,6 +79,29 @@ via één spoor.
 *(Reageren via mail zodat het automatisch in het ticket landt staat op de
 planning, maar vereist een aparte mailinfrastructuur. Tot die tijd: portaal.)*
 
+## Het tabblad "Wacht op jou"
+
+Dit is het tabblad dat standaard openstaat, en het is bewust niet hetzelfde als
+*Nieuw*. Het toont alles waar **het laatste bericht van de klant is** — of waar
+nog helemaal geen reactie op kwam.
+
+Dat vangt drie dingen tegelijk:
+
+- nieuwe meldingen die nog niemand heeft opgepakt
+- meldingen waar de klant een vervolgvraag stelde terwijl jij al bezig was
+- afgesloten meldingen die de klant heropende met een nieuw bericht
+
+Die laatste twee stonden voorheen onder *In behandeling*, en dat is een tabblad
+dat je niet standaard opent. Een klant die na drie dagen terugkwam op zijn
+melding kon daardoor makkelijk blijven wachten.
+
+In de lijst herken je ze aan een blauwe rand links en het label **Wacht op
+jou**. Zodra jij reageert verdwijnt het label vanzelf — het gaat puur om wie er
+als laatste iets zei.
+
+De statustabbladen *Nieuw*, *In behandeling* en *Opgelost* blijven gewoon
+bestaan als je op status wilt sorteren.
+
 ## Als de klant zelf afsluit
 
 Een klant kan zijn eigen melding afsluiten met **"Melding is opgelost,

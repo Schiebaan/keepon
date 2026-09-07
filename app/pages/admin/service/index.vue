@@ -31,7 +31,12 @@ const isLoading = ref(true)
 const showCreateModal = ref(false)
 const { onMouseDown: onCreateBackdropDown, onClick: onCreateBackdropClick } = useBackdropClose(() => { showCreateModal.value = false })
 
-const activeFilter = ref<'alle' | 'nieuw' | 'in_behandeling' | 'opgelost'>('nieuw')
+// Standaard op 'wacht' en niet op 'nieuw'. De tabs waren puur op status
+// ingedeeld, maar wat je 's ochtends wil weten is niet "welke zijn nieuw" maar
+// "welke wachten op mij". Een heropend ticket krijgt status in_behandeling —
+// terecht, want het is niet nieuw — en verdween daardoor uit het standaard
+// geopende tabblad. Precies de melding die het meest urgent is.
+const activeFilter = ref<'alle' | 'wacht' | 'nieuw' | 'in_behandeling' | 'opgelost'>('wacht')
 const searchQuery = ref('')
 
 async function getAuthHeaders() {
@@ -78,7 +83,7 @@ const bijgewerkt = useRelativeTime(lastRefreshed)
 
 function toonNieuwe() {
   nieuwBinnengekomen.value = 0
-  activeFilter.value = 'nieuw'
+  activeFilter.value = 'wacht'
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
@@ -89,12 +94,13 @@ function normStatus(s: string) {
 
 // Counters per filter
 const counts = computed(() => {
-  const c = { alle: tickets.value.length, nieuw: 0, in_behandeling: 0, opgelost: 0 }
+  const c = { alle: tickets.value.length, wacht: 0, nieuw: 0, in_behandeling: 0, opgelost: 0 }
   for (const t of tickets.value) {
     const s = normStatus(t.status)
     if (s === 'nieuw') c.nieuw++
     else if (s === 'in_behandeling') c.in_behandeling++
     else if (s === 'opgelost' || s === 'gesloten') c.opgelost++
+    if (awaitsReply(t)) c.wacht++
   }
   return c
 })
@@ -103,6 +109,7 @@ const filteredTickets = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   return tickets.value.filter(t => {
     const s = normStatus(t.status)
+    if (activeFilter.value === 'wacht' && !awaitsReply(t)) return false
     if (activeFilter.value === 'nieuw' && s !== 'nieuw') return false
     if (activeFilter.value === 'in_behandeling' && s !== 'in_behandeling') return false
     if (activeFilter.value === 'opgelost' && s !== 'opgelost' && s !== 'gesloten') return false
@@ -245,12 +252,12 @@ function initials(name: string | null | undefined) {
           </button>
         </div>
         <p class="mt-1 text-sm text-gray-500">
-          <template v-if="counts.nieuw">
-            <span class="font-medium text-blue-700">{{ counts.nieuw }} nieuw</span>
+          <template v-if="counts.wacht">
+            <span class="font-medium text-blue-700">{{ counts.wacht }} wacht op reactie</span>
             <span v-if="counts.in_behandeling"> · {{ counts.in_behandeling }} in behandeling</span>
           </template>
           <template v-else-if="counts.in_behandeling">
-            {{ counts.in_behandeling }} in behandeling
+            {{ counts.in_behandeling }} in behandeling, niets wacht op jou
           </template>
           <template v-else>
             Alle meldingen afgehandeld
