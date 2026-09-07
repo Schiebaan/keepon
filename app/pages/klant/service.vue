@@ -222,6 +222,41 @@ async function sendMessage() {
   scrollToBottom()
 }
 
+const isClosing = ref(false)
+const closeError = ref('')
+
+/**
+ * De klant sluit zijn eigen melding. Reageert 'ie later alsnog, dan gaat het
+ * ticket automatisch weer open — sluiten is dus niet definitief.
+ */
+async function closeTicket() {
+  const chat = activeChat.value
+  if (!chat?.ticketId || isClosing.value) return
+  isClosing.value = true
+  closeError.value = ''
+  try {
+    const t = await $fetch<Ticket>(`/api/customer/tickets/${chat.ticketId}/resolve`, {
+      method: 'POST',
+      headers: await authHeaders(),
+    })
+    chat.ticketStatus = t.status
+    chat.status = 'ai_opgelost'
+    chat.messages.push({
+      id: `i-${Date.now()}`,
+      role: 'installer',
+      content: `Je melding is afgesloten. Heb je er later toch nog iets over, stuur dan gerust een bericht — dan zetten we 'm weer open.`,
+      timestamp: new Date().toISOString(),
+    })
+    const idx = tickets.value.findIndex(x => x.id === t.id)
+    if (idx !== -1) tickets.value[idx] = { ...tickets.value[idx], ...t }
+    scrollToBottom()
+  } catch (e: any) {
+    closeError.value = e?.data?.message || 'Afsluiten is niet gelukt. Probeer het nogmaals.'
+  } finally {
+    isClosing.value = false
+  }
+}
+
 function resolveChat() {
   if (!activeChat.value) return
   activeChat.value.status = 'ai_opgelost'
@@ -632,6 +667,27 @@ function shortPreview(s: string | null, max = 120) {
             </div>
             <p v-if="helpedByError" class="mt-1.5 text-[11px] text-red-600">{{ helpedByError }}</p>
           </template>
+        </div>
+
+        <!-- Melding afsluiten — alleen bij een echt ticket dat nog loopt.
+             Zonder dit kon een klant zijn eigen melding nooit dichtzetten; die
+             bleef als openstaand in het overzicht van de installateur staan. -->
+        <div
+          v-if="activeChat.ticketId && activeChat.ticketStatus !== 'opgelost' && activeChat.ticketStatus !== 'gesloten'"
+          class="mb-3"
+        >
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-green-300 bg-white px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-60"
+            :disabled="isClosing"
+            @click="closeTicket"
+          >
+            <span v-if="isClosing" class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-green-400 border-t-transparent" />
+            <AppIcon v-else name="check-circle" :size="14" />
+            {{ isClosing ? 'Bezig...' : 'Melding is opgelost, afsluiten' }}
+          </button>
+          <p class="mt-1.5 text-[11px] text-gray-400">Je kunt hierna altijd nog reageren; de melding gaat dan vanzelf weer open.</p>
+          <p v-if="closeError" class="mt-1.5 text-[11px] text-red-600">{{ closeError }}</p>
         </div>
 
         <!-- Action buttons -->

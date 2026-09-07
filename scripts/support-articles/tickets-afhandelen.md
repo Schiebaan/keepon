@@ -78,3 +78,20 @@ via één spoor.
 
 *(Reageren via mail zodat het automatisch in het ticket landt staat op de
 planning, maar vereist een aparte mailinfrastructuur. Tot die tijd: portaal.)*
+
+## Als de klant zelf afsluit
+
+Een klant kan zijn eigen melding afsluiten met **"Melding is opgelost,
+afsluiten"** in zijn portaal. Dat gebeurt bijvoorbeeld als hij het zelf heeft
+opgelost, of als jullie elkaar inmiddels aan de telefoon hebben gehad.
+
+De melding krijgt dan status *opgelost* en verdwijnt uit je openstaande lijst.
+Op je dashboard verschijnt *"<naam> sloot melding zelf af"*, zodat je het niet
+mist.
+
+Sluiten is voor de klant niet definitief: stuurt hij later alsnog een bericht,
+dan gaat de melding automatisch terug naar *in behandeling* en staat hij weer
+bij je in de lijst. Je hoeft dus niets te doen om dat mogelijk te houden.
+
+Wil je een melding administratief dichtzetten zodat hij niet meer vanzelf
+heropent, gebruik dan zelf de status *gesloten*.

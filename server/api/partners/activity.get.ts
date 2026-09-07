@@ -32,6 +32,7 @@ const TOONBARE_ACTIES = [
   'customer.deleted',
   'ticket.created',
   'ticket.message_added',
+  'ticket.closed_by_customer',
   'sundata.plant_created',
   'sundata.meter_created',
 ]
@@ -68,6 +69,9 @@ function describe(
       const origin = m.origin === 'customer_portal' ? ' (via portaal)' : ''
       return { type: 'ticket', icon: 'message', text: `Nieuwe servicemelding van ${who}${origin}: ${subject}` }
     }
+    case 'ticket.closed_by_customer':
+      return { type: 'ticket', icon: 'check-circle', text: `${who} sloot melding zelf af: ${m.subject || 'melding'}` }
+
     case 'ticket.message_added': {
       if (m.role === 'customer') {
         return { type: 'ticket', icon: 'message', text: m.reopened
