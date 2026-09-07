@@ -102,6 +102,20 @@ als laatste iets zei.
 De statustabbladen *Nieuw*, *In behandeling* en *Opgelost* blijven gewoon
 bestaan als je op status wilt sorteren.
 
+## Wat de klant merkt als jij afsluit
+
+Zet je een melding op *opgelost* of *gesloten*, dan krijgt de klant automatisch
+bericht. In die mail staat het onderwerp, je laatste reactie als toelichting, en
+vooral: dat hij gewoon kan reageren als het probleem er nog is. De melding gaat
+dan vanzelf weer open en komt bij jou terug op de lijst.
+
+Die zin staat er bewust in. Zonder die uitleg voelt een afsluiting als een deur
+die dichtgaat, en dan gaat een klant bellen in plaats van reageren.
+
+De mail gaat alleen op het moment van afronden. Werk je daarna nog iets bij aan
+een afgehandelde melding — urgentie, onderwerp — dan krijgt de klant niets;
+anders zou hij een mail krijgen bij elke administratieve wijziging.
+
 ## Als de klant zelf afsluit
 
 Een klant kan zijn eigen melding afsluiten met **"Melding is opgelost,

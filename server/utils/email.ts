@@ -334,6 +334,72 @@ export function buildTicketReplyEmail(data: TicketReplyEmailData) {
   }
 }
 
+
+// ---- Ticket afgehandeld (naar de klant) ----
+interface TicketResolvedEmailData {
+  customerName: string
+  ticketSubject: string
+  ticketRef?: string
+  lastReply?: string | null     // laatste reactie van het team, als context
+  authorName?: string | null
+  ticketUrl: string             // /klant/service
+  partner?: { name: string; primary_color: string; logo_url?: string }
+}
+
+/**
+ * De installateur zet een melding op afgehandeld. Zonder deze mail hoorde de
+ * klant daar niets over: hij zag het alleen als hij toevallig het portaal
+ * opende, en bleef anders in de veronderstelling dat het nog liep.
+ *
+ * De kern van de boodschap is niet "hij is dicht" maar "hij gaat weer open als
+ * het niet klopt". Zonder die zin voelt een afsluiting als een deur die
+ * dichtgaat, en gaat de klant bellen in plaats van reageren.
+ */
+export function buildTicketResolvedEmail(data: TicketResolvedEmailData) {
+  const firstName = (data.customerName || '').split(' ')[0] || 'daar'
+  const partnerName = data.partner?.name || 'je installateur'
+  const senderLabel = buildSenderLabel(data.authorName, partnerName)
+  const excerpt = (data.lastReply || '').trim().slice(0, 240)
+
+  const refLine = data.ticketRef
+    ? `<p class="highlight-label">Onderwerp · Ticket ${escapeHtml(data.ticketRef)}</p>`
+    : `<p class="highlight-label">Onderwerp</p>`
+
+  const content = `
+    <h1>Je melding is afgehandeld</h1>
+    <p>Hoi ${firstName}, ${escapeHtml(senderLabel)} heeft je servicemelding afgerond.</p>
+
+    <div class="highlight">
+      ${refLine}
+      <p class="highlight-value">${escapeHtml(data.ticketSubject)}</p>
+    </div>
+
+    ${excerpt ? `<p style="margin-bottom:24px;">
+      <em style="color:#6b7280;">"${escapeHtml(excerpt)}${excerpt.length >= 240 ? '…' : ''}"</em>
+    </p>` : ''}
+
+    <p><strong>Is het probleem er nog?</strong> Reageer dan gewoon op je melding
+    in het portaal — hij gaat dan vanzelf weer open en komt bij
+    ${escapeHtml(partnerName)} terug op de lijst. Je hoeft geen nieuwe melding
+    aan te maken.</p>
+
+    <p style="text-align:center; margin: 28px 0;">
+      <a href="${data.ticketUrl}" class="btn">Bekijk je melding</a>
+    </p>
+
+    <hr class="divider">
+    <p style="font-size:13px; color:#9ca3af; line-height:1.55;">
+      Antwoorden op deze mail komen niet bij je melding terecht. Gebruik het
+      portaal, dan ziet ${escapeHtml(partnerName)} meteen de hele geschiedenis.
+    </p>`
+
+  const subject = data.ticketRef
+    ? `Melding ${data.ticketRef} afgehandeld: ${data.ticketSubject}`
+    : `Je melding is afgehandeld: ${data.ticketSubject}`
+
+  return { subject, html: baseLayout(content, data.partner) }
+}
+
 // ---- New ticket notification (to installer / partner support inbox) ----
 interface NewTicketEmailData {
   customerName: string
