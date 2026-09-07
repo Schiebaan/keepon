@@ -1,7 +1,22 @@
 // Customer data composable — loads from Supabase in production
 import type { Customer } from '~~/shared/types/database'
 
-export function useCustomers() {
+interface UseCustomersOptions {
+  /**
+   * Automatisch de eerste pagina laden zodra auth klaar is.
+   *   true  (default) → laadt ongefilterd; voor overzichten die álle klanten willen
+   *   false           → laadt niets; de pagina roept zelf refresh(filters) aan
+   *   { ...filters }  → laadt meteen mét die filters
+   *
+   * Pagina's die zelf filteren (klanten = accepted, uitnodigingen = pending)
+   * moeten `false` meegeven. Anders vuren er twee requests: eerst ongefilterd,
+   * dan gefilterd — dat gaf zichtbare flikkering én een race waarbij het
+   * ongefilterde antwoord het gefilterde kon overschrijven.
+   */
+  autoLoad?: boolean | Record<string, any>
+}
+
+export function useCustomers(options: UseCustomersOptions = {}) {
   const config = useRuntimeConfig()
 
   // Demo mode: use mock data
@@ -44,6 +59,11 @@ export function useCustomers() {
   const hasMore = useState<boolean>('adminCustomersHasMore', () => false)
   const _loaded = useState('customersLoaded', () => false)
   const isLoading = useState('customersLoading', () => !_loaded.value)
+  // Volgnummer voor race-bescherming: elke fetch claimt een nummer, en alleen
+  // het antwoord van de hoogste (= meest recente) claim mag de state zetten.
+  // Zonder dit kan een traag antwoord van een oudere zoekopdracht een nieuwer
+  // resultaat overschrijven.
+  const _seq = useState('customersSeq', () => 0)
 
   interface ListResponse {
     rows: Customer[]
@@ -73,17 +93,22 @@ export function useCustomers() {
    * Replaces the contents (not append). Use loadMore() to append the next page.
    */
   async function refresh(params: QueryParams = {}) {
+    const mySeq = ++_seq.value
     isLoading.value = true
     try {
       const headers = await getAuthHeaders()
       const data = await $fetch<ListResponse>('/api/customers', { headers, query: params })
+      // Inmiddels een nieuwere fetch gestart? Dan is dit antwoord verouderd.
+      if (mySeq !== _seq.value) return
       customers.value = data?.rows || []
       total.value = data?.total || 0
       hasMore.value = !!data?.has_more
     } catch (e) {
-      console.error('Failed to load customers:', e)
+      if (mySeq === _seq.value) console.error('Failed to load customers:', e)
     } finally {
-      isLoading.value = false
+      // Alleen de laatste fetch mag de spinner uitzetten, anders knippert 'ie
+      // uit terwijl er nog een request loopt.
+      if (mySeq === _seq.value) isLoading.value = false
     }
   }
 
@@ -117,23 +142,21 @@ export function useCustomers() {
     return await $fetch<ListResponse>('/api/customers', { headers, query: params })
   }
 
-  // Auto-load: wait for auth to be ready, then fetch the first page
-  if (!_loaded.value && typeof window !== 'undefined') {
+  // Auto-load: wacht tot auth klaar is en haal dan de eerste pagina op.
+  //
+  // Pagina's die zelf filteren geven `autoLoad: false` mee en roepen zelf
+  // refresh(filters) aan — anders krijg je twee requests over elkaar heen.
+  // We routeren via refresh() zodat de race-guard ook hier geldt.
+  const autoLoad = options.autoLoad ?? true
+  if (autoLoad !== false && !_loaded.value && typeof window !== 'undefined') {
     _loaded.value = true
     isLoading.value = true
+    const autoParams: QueryParams = typeof autoLoad === 'object' ? autoLoad : {}
     const supabase = useSupabaseClient()
     const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange((event, session) => {
       if (session?.access_token) {
-        $fetch<ListResponse>('/api/customers', {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        }).then(data => {
-          customers.value = data?.rows || []
-          total.value = data?.total || 0
-          hasMore.value = !!data?.has_more
-        }).catch(() => {}).finally(() => {
-          isLoading.value = false
-        })
         authSub.unsubscribe()
+        refresh(autoParams)
       }
     })
   }

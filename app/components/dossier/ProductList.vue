@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CustomerProduct, ProductCategory } from '~~/shared/types/database'
+import { getModuleTheme } from '~/utils/module-theme'
 
 const props = defineProps<{ customerId: string; partnerId: string; customerName?: string }>()
 const emit = defineEmits<{ 'open-connector': [type: string] }>()
@@ -39,17 +40,20 @@ defineExpose({ refresh })
 const showAddModal = ref(false)
 const editingProduct = ref<any>(null)
 
+// Label, icoon en kleur komen uit de centrale module-theme, zodat een
+// warmtepomp overal dezelfde kleur heeft. Deze component had een eigen map
+// waarin heat_pump rood en ev_charger groen was — precies de twee kleuren die
+// we voor koppelstatus gebruiken, dus elke warmtepomp leek stuk en elke
+// laadpaal leek gekoppeld.
 const categoryLabels: Record<ProductCategory, string> = {
   solar_panel: 'Zonnepanelen', inverter: 'Omvormer', heat_pump: 'Warmtepomp',
   ev_charger: 'Laadpaal', battery: 'Batterij', other: 'Overig',
 }
-const categoryIcons: Record<ProductCategory, string> = {
-  solar_panel: 'solar', inverter: 'zap', heat_pump: 'heat-pump',
-  ev_charger: 'ev-charger', battery: 'battery', other: 'package',
+function categoryIcon(cat: ProductCategory): string {
+  return getModuleTheme(cat).icon
 }
-const categoryColors: Record<ProductCategory, string> = {
-  solar_panel: '#eab308', inverter: '#3b82f6', heat_pump: '#ef4444',
-  ev_charger: '#22c55e', battery: '#8b5cf6', other: '#6b7280',
+function categoryColor(cat: ProductCategory): string {
+  return getModuleTheme(cat).accent
 }
 
 async function handleAdd(data: any) {
@@ -131,9 +135,9 @@ function formatDate(d: string | null) {
       >
         <div
           class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
-          :style="{ backgroundColor: categoryColors[product.category] + '15', color: categoryColors[product.category] }"
+          :style="{ backgroundColor: categoryColor(product.category) + '15', color: categoryColor(product.category) }"
         >
-          <AppIcon :name="categoryIcons[product.category]" :size="20" />
+          <AppIcon :name="categoryIcon(product.category)" :size="20" />
         </div>
 
         <div class="flex-1 min-w-0">
@@ -143,7 +147,7 @@ function formatDate(d: string | null) {
             </p>
             <span
               class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium"
-              :style="{ backgroundColor: categoryColors[product.category] + '15', color: categoryColors[product.category] }"
+              :style="{ backgroundColor: categoryColor(product.category) + '15', color: categoryColor(product.category) }"
             >
               {{ categoryLabels[product.category] }}
             </span>

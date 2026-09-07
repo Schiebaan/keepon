@@ -2,8 +2,19 @@
 definePageMeta({ layout: false, middleware: ['auth'] })
 
 const { state, isLoading, load, submitMandate, formatPrice, targetRouteForStep } = useOnboarding()
+const route = useRoute()
+const supabase = useSupabaseClient()
+
+// Terugkeer van de bank: ?mandate=pending. Dan eerst controleren hoe het is
+// afgelopen, vóór we de klant ergens heen sturen.
+const returningFromBank = ref(route.query.mandate === 'pending')
+const checkingReturn = ref(false)
 
 onMounted(async () => {
+  if (returningFromBank.value) {
+    await handleBankReturn()
+    return
+  }
   const s = await load()
   if (!s) return
   // Customer must have given akkoord before they can land on this incasso page.
@@ -15,6 +26,64 @@ onMounted(async () => {
     navigateTo('/klant')
   }
 })
+
+async function authHeaders() {
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session?.access_token) throw new Error('Niet ingelogd')
+  return { Authorization: `Bearer ${session.access_token}` }
+}
+
+/**
+ * De klant is terug van zijn bank. Mollie's webhook is leidend maar kan een
+ * paar seconden later komen, dus vragen we het zelf een paar keer na voordat
+ * we concluderen dat het niet gelukt is.
+ */
+async function handleBankReturn() {
+  checkingReturn.value = true
+  try {
+    for (let poging = 0; poging < 5; poging++) {
+      const r = await $fetch<{ status: string; mandate: boolean }>(
+        '/api/customer/onboarding/mandate-ideal-status',
+        { headers: await authHeaders() },
+      )
+      if (r.mandate) {
+        await load(true)
+        return navigateTo('/welkom/klaar')
+      }
+      // open/pending = bank is nog bezig. Afgebroken of mislukt heeft geen zin
+      // om op te wachten.
+      if (['failed', 'canceled', 'expired'].includes(r.status)) break
+      await new Promise(res => setTimeout(res, 1500))
+    }
+    submitError.value = 'De machtiging is niet afgerond. Probeer het opnieuw, of vul je IBAN handmatig in.'
+  } catch {
+    submitError.value = 'We konden de status van je machtiging niet ophalen. Probeer het opnieuw.'
+  } finally {
+    checkingReturn.value = false
+    returningFromBank.value = false
+    await load(true)
+  }
+}
+
+const startingIdeal = ref(false)
+const showManual = ref(false)
+
+async function startIdeal() {
+  if (startingIdeal.value) return
+  startingIdeal.value = true
+  submitError.value = ''
+  try {
+    const r = await $fetch<{ checkout_url: string }>('/api/customer/onboarding/mandate-ideal', {
+      method: 'POST',
+      headers: await authHeaders(),
+    })
+    window.location.href = r.checkout_url
+  } catch (e: any) {
+    submitError.value = e?.data?.message || 'Kon iDEAL niet starten. Vul je IBAN handmatig in.'
+    showManual.value = true
+    startingIdeal.value = false
+  }
+}
 
 const partner = computed(() => state.value?.partner)
 const totalMonthly = computed(() => state.value?.proposal?.total_monthly_cents || 0)
@@ -70,7 +139,14 @@ async function handleSubmit(skip = false) {
         <span class="step-marker" aria-label="Optionele stap">Incasso</span>
       </header>
 
-      <div v-if="isLoading && !state" class="text-center py-16">
+      <!-- Terug van de bank: we vragen Mollie na of de machtiging rond is. -->
+      <div v-if="checkingReturn" class="text-center py-16">
+        <div class="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-gray-200 border-t-gray-500" />
+        <p class="mt-4 text-sm font-medium text-gray-900">Je machtiging wordt bevestigd</p>
+        <p class="mt-1 text-sm text-gray-500">Even geduld, dit duurt een paar seconden.</p>
+      </div>
+
+      <div v-else-if="isLoading && !state" class="text-center py-16">
         <div class="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-gray-200 border-t-gray-500" />
       </div>
 
@@ -97,7 +173,35 @@ async function handleSubmit(skip = false) {
             </div>
           </div>
 
-          <form class="form" @submit.prevent="handleSubmit(false)">
+          <p v-if="submitError" class="error" role="alert" aria-live="assertive">{{ submitError }}</p>
+
+          <!-- Standaardroute: iDEAL. De klant bevestigt bij zijn eigen bank,
+               waardoor het rekeningnummer geverifieerd is in plaats van
+               ingetypt. -->
+          <template v-if="!showManual">
+            <button type="button" class="btn-primary" :disabled="startingIdeal" @click="startIdeal">
+              <span v-if="startingIdeal" class="spinner" />
+              <AppIcon v-else name="shield" :size="16" />
+              {{ startingIdeal ? 'Je gaat naar je bank...' : 'Machtigen via iDEAL' }}
+            </button>
+
+            <ul class="ideal-steps">
+              <li>Je kiest je eigen bank en logt in zoals je gewend bent.</li>
+              <li>We schrijven <strong>€0,01</strong> af om je rekening te bevestigen.</li>
+              <li>Daarna loopt de maandelijkse incasso vanzelf.</li>
+            </ul>
+
+            <button type="button" class="btn-link" @click="showManual = true">
+              Liever je IBAN zelf invullen?
+            </button>
+            <button type="button" class="btn-secondary" @click="handleSubmit(true)" :disabled="submitting">
+              Nu nog niet, doe ik later
+            </button>
+          </template>
+
+          <!-- Terugvaloptie: handmatig IBAN. Voor zakelijke rekeningen zonder
+               iDEAL, of als iDEAL onverhoopt niet beschikbaar is. -->
+          <form v-else class="form" @submit.prevent="handleSubmit(false)">
             <div class="field">
               <label>IBAN</label>
               <input v-model="iban" type="text" placeholder="NL91 ABNA 0417 1643 00" maxlength="34" autocomplete="off" />
@@ -108,7 +212,10 @@ async function handleSubmit(skip = false) {
               <input v-model="accountHolder" type="text" placeholder="J. de Vries" autocomplete="name" />
             </div>
 
-            <p v-if="submitError" class="error" role="alert" aria-live="assertive">{{ submitError }}</p>
+            <p class="manual-note">
+              <AppIcon name="warning" :size="14" />
+              Controleer het nummer goed — we kunnen het hier niet bij je bank verifiëren.
+            </p>
 
             <button type="submit" class="btn-primary" :disabled="submitting || !ibanLooksValid || !accountHolder">
               <span v-if="submitting" class="spinner" />
@@ -116,6 +223,9 @@ async function handleSubmit(skip = false) {
               {{ submitting ? 'Bezig...' : 'Mandaat verlenen' }}
             </button>
 
+            <button type="button" class="btn-link" @click="showManual = false">
+              Toch via iDEAL, dat is veiliger
+            </button>
             <button type="button" class="btn-secondary" @click="handleSubmit(true)" :disabled="submitting">
               Nu nog niet, doe ik later
             </button>
@@ -192,6 +302,26 @@ async function handleSubmit(skip = false) {
 }
 .btn-secondary:hover:not(:disabled) { color: #1f2937; }
 .btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-link {
+  display: block; width: 100%; padding: 0.5rem; margin-top: 0.75rem;
+  background: transparent; border: 0; color: var(--brand, #2563eb);
+  font-size: 0.875rem; font-weight: 500; cursor: pointer; text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.btn-link:hover { opacity: 0.75; }
+
+.ideal-steps { list-style: none; padding: 0; margin: 1.25rem 0 0; display: flex; flex-direction: column; gap: 0.5rem; counter-reset: stap; }
+.ideal-steps li { position: relative; padding-left: 1.75rem; font-size: 0.8125rem; color: #6b7280; line-height: 1.45; counter-increment: stap; }
+.ideal-steps li::before {
+  content: counter(stap); position: absolute; left: 0; top: 0.0625rem;
+  width: 1.125rem; height: 1.125rem; border-radius: 9999px;
+  background: #f3f4f6; color: #6b7280; font-size: 0.6875rem; font-weight: 600;
+  display: flex; align-items: center; justify-content: center;
+}
+.ideal-steps strong { color: #374151; font-weight: 600; }
+
+.manual-note { display: flex; align-items: flex-start; gap: 0.5rem; font-size: 0.75rem; color: #92400e; background: #fffbeb; border-radius: 0.5rem; padding: 0.5rem 0.625rem; margin: 0; line-height: 1.4; }
+.manual-note svg { flex-shrink: 0; margin-top: 0.0625rem; }
 
 .spinner { width: 1rem; height: 1rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

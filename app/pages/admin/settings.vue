@@ -129,7 +129,7 @@ async function deleteLabel(label: TicketLabel) {
 }
 
 const moduleIcons: Record<string, string> = { solar: 'solar', heat_pump: 'heat-pump', ev_charger: 'ev-charger' }
-const moduleColors: Record<string, string> = { solar: 'bg-amber-50 text-amber-600', heat_pump: 'bg-rose-50 text-rose-600', ev_charger: 'bg-sky-50 text-sky-600' }
+const moduleColors: Record<string, string> = { solar: 'bg-amber-50 text-amber-600', heat_pump: 'bg-orange-50 text-orange-600', ev_charger: 'bg-sky-50 text-sky-600' }
 
 function formatPrice(cents: number) {
   return (cents / 100).toFixed(2).replace('.', ',')

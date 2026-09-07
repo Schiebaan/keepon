@@ -279,7 +279,7 @@ function handleClose() {
                   class="flex h-10 w-10 items-center justify-center rounded-xl"
                   :class="[
                     integration.type === 'solar' ? 'bg-amber-100 text-amber-600' : '',
-                    integration.type === 'heat_pump' ? 'bg-rose-100 text-rose-600' : '',
+                    integration.type === 'heat_pump' ? 'bg-orange-100 text-orange-600' : '',
                     integration.type === 'ev_charger' ? 'bg-sky-100 text-sky-600' : '',
                   ]"
                 >
@@ -329,7 +329,7 @@ function handleClose() {
               <!-- Weheat: headless connect via Weheat portal credentials -->
               <div v-if="integration.integrationType === 'weheat'" class="rounded-xl border border-gray-200 p-5">
                 <div class="flex items-center gap-3 mb-3">
-                  <div class="flex h-10 w-10 items-center justify-center rounded-full bg-rose-50 text-rose-600">
+                  <div class="flex h-10 w-10 items-center justify-center rounded-full bg-orange-50 text-orange-600">
                     <AppIcon name="heat-pump" :size="20" />
                   </div>
                   <div>

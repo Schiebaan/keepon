@@ -1,5 +1,5 @@
 import { getServiceRoleClient } from '~~/server/utils/supabase'
-import { getMollie, isMollieTestMode } from '~~/server/utils/mollie'
+import { getMollie, isMollieTestMode, isDirectDebitEnabled } from '~~/server/utils/mollie'
 
 /**
  * Capture (or skip) the SEPA-mandate for this customer.
@@ -76,6 +76,20 @@ export default defineEventHandler(async (event) => {
   }
 
   // --- Mollie: customer + first-payment mandate ----------------------------
+  // Eerst controleren of we überhaupt mógen incasseren. De Mandates-API maakt
+  // namelijk vrolijk een mandaat met status 'valid' aan terwijl de methode
+  // uitstaat op het profiel — waarna de eerste échte incasso maanden later op
+  // een 403 stukloopt. Liever hier stoppen dan een mandaat vastleggen dat niets
+  // waard is.
+  if (!(await isDirectDebitEnabled())) {
+    console.error('[mandate] SEPA Direct Debit staat uit op het Mollie-profiel — mandaat geweigerd')
+    throw createError({
+      statusCode: 503,
+      message: 'Automatische incasso is op dit moment niet beschikbaar. Je kunt deze stap overslaan en later afronden.',
+      data: { code: 'DIRECT_DEBIT_DISABLED' },
+    })
+  }
+
   const mollie = getMollie()
 
   // Re-use existing Mollie customer if we already created one (e.g. retry)

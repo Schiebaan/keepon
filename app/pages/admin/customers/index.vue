@@ -4,7 +4,7 @@ import type { Customer } from '~~/shared/types/database'
 
 definePageMeta({ layout: 'admin', middleware: ['auth', 'role-partner'] })
 
-const { customers, total: customersTotal, hasMore: customersHasMore, isLoading: customersLoading, refresh: refreshCustomers, loadMore: loadMoreCustomers, createCustomer, updateCustomer, deleteCustomer } = useCustomers()
+const { customers, total: customersTotal, hasMore: customersHasMore, isLoading: customersLoading, refresh: refreshCustomers, loadMore: loadMoreCustomers, createCustomer, updateCustomer, deleteCustomer } = useCustomers({ autoLoad: false })
 const router = useRouter()
 
 const searchQuery = ref('')
@@ -71,6 +71,27 @@ function moduleBadge(c: any, category: string) {
   return { label: MODULE_LABEL[category] || category, ...TONE_STYLE[tone], tone }
 }
 
+// --- Legenda -------------------------------------------------------------
+// De tabel gebruikt twee onafhankelijke kleursystemen (module-pills en
+// status-badge). Zonder uitleg is niet te raden wat rood versus amber
+// betekent, dus dit staat uitklapbaar boven de tabel én in de kennisbank.
+const showLegend = ref(false)
+
+const MODULE_LEGEND: { tone: ModuleTone; label: string; hint: string }[] = [
+  { tone: 'linked',  label: 'Groen',  hint: 'Monitoring is gekoppeld — de klant ziet live data in zijn portaal.' },
+  { tone: 'pending', label: 'Amber',  hint: 'Klant heeft akkoord gegeven, maar de monitoring moet nog gekoppeld worden.' },
+  { tone: 'overdue', label: 'Rood',   hint: 'Klant betaalt al, maar de monitoring is nog niet gekoppeld. Actie nodig.' },
+  { tone: 'idle',    label: 'Grijs',  hint: 'Klant heeft nog geen akkoord gegeven — er valt nog niets te koppelen.' },
+]
+
+const STATUS_LEGEND: { label: string; cls: string; hint: string }[] = [
+  { label: 'Mail verstuurd',        cls: 'bg-gray-100 text-gray-600',   hint: 'Uitnodiging is de deur uit, klant heeft nog niets gedaan.' },
+  { label: 'Wacht op akkoord',      cls: 'bg-amber-100 text-amber-800', hint: 'Klant heeft het voorstel gezien maar nog niet geaccepteerd.' },
+  { label: 'Akkoord, incasso open', cls: 'bg-blue-50 text-blue-700',    hint: 'Contract staat, maar de klant heeft nog geen IBAN afgegeven. Je kunt nog niet incasseren.' },
+  { label: 'Volledig actief',       cls: 'bg-green-100 text-green-800', hint: 'Akkoord én incasso geregeld. Hier kun je factureren.' },
+  { label: 'Akkoord zonder modules', cls: 'bg-red-100 text-red-800',    hint: 'Zeldzaam: akkoord gegeven zonder onderdelen te kiezen. Er zijn geen contractregels, dus factureren lukt niet. Meld dit bij support.' },
+]
+
 function moduleTooltip(c: any, category: string): string {
   const tone = moduleTone(c, category)
   const label = MODULE_LABEL[category] || category
@@ -82,16 +103,32 @@ function moduleTooltip(c: any, category: string): string {
   }
 }
 
-type OnboardingState = { step?: string; accepted_at?: string | null; mandate_at?: string | null; mandate_skipped?: boolean } | null
+type OnboardingState = { step?: string; accepted_at?: string | null; accepted_modules?: string[] | null; mandate_at?: string | null; mandate_skipped?: boolean } | null
 function customerOnboarding(c: any): OnboardingState { return (c?.onboarding as OnboardingState) || null }
 
-function statusBadge(c: any): { label: string; tone: 'idle' | 'pending' | 'ok' | 'partial' } {
+function statusBadge(c: any): { label: string; tone: 'idle' | 'pending' | 'ok' | 'partial' | 'broken' } {
   const o = customerOnboarding(c)
   if (!o) return { label: 'Mail verstuurd', tone: 'idle' }
   if (!o.accepted_at) return { label: 'Wacht op akkoord', tone: 'pending' }
+  // Akkoord gegeven maar geen geaccepteerde modules → deze klant kan niet
+  // gefactureerd worden. Ontstond bij oudere akkoorden voordat we hierop
+  // valideerden; expliciet tonen zodat het niet stilletjes blijft hangen.
+  if (!o.accepted_modules?.length) return { label: 'Akkoord zonder modules', tone: 'broken' }
   if (o.mandate_at) return { label: 'Volledig actief', tone: 'ok' }
   if (o.mandate_skipped) return { label: 'Akkoord, incasso later', tone: 'partial' }
   return { label: 'Akkoord, incasso open', tone: 'partial' }
+}
+
+function statusTooltip(c: any): string {
+  const o = customerOnboarding(c)
+  if (!o) return 'Uitnodiging verstuurd — klant heeft nog niets gedaan'
+  if (!o.accepted_at) return 'Klant heeft het voorstel nog niet geaccepteerd'
+  if (!o.accepted_modules?.length) {
+    return 'Akkoord gegeven zonder onderdelen te kiezen — er zijn geen contractregels, dus factureren lukt niet. Neem contact op met support.'
+  }
+  if (o.mandate_at) return 'Akkoord én incasso geregeld — je kunt factureren'
+  if (o.mandate_skipped) return 'Akkoord gegeven, klant koos "incasso later regelen"'
+  return 'Akkoord gegeven, maar nog geen IBAN afgegeven — incasseren kan nog niet'
 }
 
 function goToCustomer(id: string) {
@@ -101,7 +138,7 @@ function goToCustomer(id: string) {
 // Server-side filter is `accepted=true` so the list already contains only
 // accepted customers. We still need the pending-count for the header chip;
 // that's one cheap COUNT-only query (limit=1) on the side.
-const { query: queryCustomers } = useCustomers()
+const { query: queryCustomers } = useCustomers({ autoLoad: false })
 const pendingCount = ref(0)
 async function loadPendingCount() {
   try {
@@ -210,16 +247,73 @@ async function handleDelete(customer: Customer) {
       </NuxtLink>
     </div>
 
-    <!-- Search -->
-    <div class="mb-4 relative max-w-sm">
-      <AppIcon name="search" :size="16" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-      <input
-        v-model="searchQuery"
-        type="search"
-        class="input pl-9"
-        placeholder="Zoek op naam, e-mail of plaats..."
-      />
+    <!-- Search + legenda -->
+    <div class="mb-4 flex flex-wrap items-center gap-3">
+      <div class="relative max-w-sm flex-1 min-w-[240px]">
+        <AppIcon name="search" :size="16" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <input
+          v-model="searchQuery"
+          type="search"
+          class="input pl-9"
+          placeholder="Zoek op naam, e-mail of plaats..."
+        />
+      </div>
+      <button
+        class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50"
+        :aria-expanded="showLegend"
+        @click="showLegend = !showLegend"
+      >
+        <AppIcon name="help-circle" :size="14" />
+        Wat betekenen de kleuren?
+        <AppIcon name="chevron-down" :size="12" class="transition-transform" :class="showLegend ? 'rotate-180' : ''" />
+      </button>
     </div>
+
+    <!-- Legenda — uitklapbaar zodat 'ie geen permanente ruimte vreet voor
+         mensen die het systeem al kennen -->
+    <Transition name="fade">
+      <div v-if="showLegend" class="mb-4 grid gap-4 rounded-2xl border border-gray-200 bg-gray-50/70 p-4 sm:grid-cols-2">
+        <div>
+          <p class="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Kolom "Modules"</p>
+          <p class="mb-2.5 text-[11px] text-gray-500">
+            Toont per installatie of de monitoring gekoppeld is aan Sundata, Weheat of Easee.
+          </p>
+          <ul class="space-y-1.5">
+            <li v-for="item in MODULE_LEGEND" :key="item.tone" class="flex items-start gap-2">
+              <span
+                class="mt-0.5 inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium"
+                :style="{ backgroundColor: TONE_STYLE[item.tone].bg, color: TONE_STYLE[item.tone].fg }"
+              >
+                <span class="h-1.5 w-1.5 rounded-full" :style="{ backgroundColor: TONE_STYLE[item.tone].dot }" />
+                {{ item.label }}
+              </span>
+              <span class="text-[11px] leading-relaxed text-gray-600">{{ item.hint }}</span>
+            </li>
+          </ul>
+        </div>
+        <div>
+          <p class="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Kolom "Status"</p>
+          <p class="mb-2.5 text-[11px] text-gray-500">
+            Hoe ver de klant is in de onboarding: van uitnodiging tot actieve incasso.
+          </p>
+          <ul class="space-y-1.5">
+            <li v-for="item in STATUS_LEGEND" :key="item.label" class="flex items-start gap-2">
+              <span
+                class="mt-0.5 inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium"
+                :class="item.cls"
+              >
+                {{ item.label }}
+              </span>
+              <span class="text-[11px] leading-relaxed text-gray-600">{{ item.hint }}</span>
+            </li>
+          </ul>
+        </div>
+        <p class="text-[11px] text-gray-400 sm:col-span-2">
+          Meer uitleg over de onboarding-flow staat in de
+          <a href="/support/wat-ziet-je-klant" target="_blank" class="text-blue-600 hover:underline">handleiding</a>.
+        </p>
+      </div>
+    </Transition>
 
     <!-- Table (client-only to prevent hydration mismatch with async data) -->
     <ClientOnly>
@@ -284,11 +378,13 @@ async function handleDelete(customer: Customer) {
               <td class="px-6 py-3.5">
                 <span
                   class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium"
+                  :title="statusTooltip(customer)"
                   :class="{
                     'bg-gray-100 text-gray-600': statusBadge(customer).tone === 'idle',
                     'bg-amber-100 text-amber-800': statusBadge(customer).tone === 'pending',
                     'bg-blue-50 text-blue-700': statusBadge(customer).tone === 'partial',
                     'bg-green-100 text-green-800': statusBadge(customer).tone === 'ok',
+                    'bg-red-100 text-red-800': statusBadge(customer).tone === 'broken',
                   }"
                 >
                   <span class="h-1.5 w-1.5 rounded-full" :class="{
@@ -296,6 +392,7 @@ async function handleDelete(customer: Customer) {
                     'bg-amber-500': statusBadge(customer).tone === 'pending',
                     'bg-blue-500': statusBadge(customer).tone === 'partial',
                     'bg-green-500': statusBadge(customer).tone === 'ok',
+                    'bg-red-500': statusBadge(customer).tone === 'broken',
                   }" />
                   {{ statusBadge(customer).label }}
                 </span>

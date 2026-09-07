@@ -15,7 +15,9 @@ export default defineNuxtConfig({
     redirectOptions: {
       login: '/login',
       callback: '/auth/callback',
-      exclude: ['/', '/login', '/welkom/*', '/voorwaarden/*', '/api/*', '/auth/*'],
+      // /support is de publieke kennisbank — moet zonder login leesbaar zijn.
+      // Het beheer ervan zit onder /platform/support en blijft wél afgeschermd.
+      exclude: ['/', '/login', '/welkom/*', '/voorwaarden/*', '/api/*', '/auth/*', '/support', '/support/*'],
     },
   },
 

@@ -51,7 +51,7 @@ function fmtDaysActive(d?: number | null): string {
 const toneColors: Record<string, { dot: string; text: string; bg: string }> = {
   idle:    { dot: 'bg-gray-400',  text: 'text-gray-700',  bg: 'bg-gray-100' },
   standby: { dot: 'bg-blue-400',  text: 'text-blue-700',  bg: 'bg-blue-50' },
-  heating: { dot: 'bg-rose-500',  text: 'text-rose-700',  bg: 'bg-rose-50' },
+  heating: { dot: 'bg-orange-500',  text: 'text-orange-700',  bg: 'bg-orange-50' },
   error:   { dot: 'bg-red-500',   text: 'text-red-700',   bg: 'bg-red-50' },
 }
 function toneStyle(tone?: string) { return toneColors[tone || 'idle'] }
@@ -65,7 +65,7 @@ function toneStyle(tone?: string) { return toneColors[tone || 'idle'] }
     </NuxtLink>
     <div class="flex items-center justify-between gap-3 mb-6">
       <div class="flex items-center gap-3">
-        <div class="flex h-11 w-11 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
+        <div class="flex h-11 w-11 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
           <AppIcon name="heat-pump" :size="22" />
         </div>
         <h1 class="text-2xl font-bold text-gray-900">Warmtepomp</h1>
@@ -89,7 +89,7 @@ function toneStyle(tone?: string) { return toneColors[tone || 'idle'] }
     <!-- Connected with live data -->
     <template v-else-if="heatPump?.linked && data?.linked && !dataError">
       <!-- 1. Status hero (compact, friendly) -->
-      <div class="rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50 to-orange-50 p-5 mb-5">
+      <div class="rounded-2xl border border-orange-100 bg-gradient-to-br from-orange-50 to-orange-50 p-5 mb-5">
         <div class="flex items-start justify-between gap-3">
           <div>
             <p class="text-lg font-semibold text-gray-900">{{ heatPumpLabel }}</p>
@@ -125,9 +125,9 @@ function toneStyle(tone?: string) { return toneColors[tone || 'idle'] }
           <!-- Multiplier arrow -->
           <div class="flex-1 max-w-[200px]">
             <div class="relative">
-              <div class="h-1.5 rounded-full bg-gradient-to-r from-yellow-300 via-orange-300 to-rose-400" />
+              <div class="h-1.5 rounded-full bg-gradient-to-r from-yellow-300 via-orange-300 to-orange-400" />
               <div class="absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap">
-                <span class="rounded-full bg-white border border-rose-200 px-3 py-1 text-xs font-bold text-rose-700 shadow-sm tabular-nums">
+                <span class="rounded-full bg-white border border-orange-200 px-3 py-1 text-xs font-bold text-orange-700 shadow-sm tabular-nums">
                   × {{ data.scop ? data.scop.toFixed(1) : '—' }}
                 </span>
               </div>
@@ -137,7 +137,7 @@ function toneStyle(tone?: string) { return toneColors[tone || 'idle'] }
 
           <!-- Heat out -->
           <div class="flex-1 text-center">
-            <div class="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-600">
+            <div class="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-orange-50 text-orange-600">
               <AppIcon name="heat-pump" :size="22" />
             </div>
             <p class="text-xs text-gray-500">Warmte</p>
@@ -147,7 +147,7 @@ function toneStyle(tone?: string) { return toneColors[tone || 'idle'] }
 
         <p class="text-sm text-gray-600 text-center">
           Voor elke <strong>1 kWh stroom</strong> die je warmtepomp gebruikt, haalt hij
-          <strong class="text-rose-700 tabular-nums">{{ data.scop ? data.scop.toFixed(1) : '—' }} kWh warmte</strong>
+          <strong class="text-orange-700 tabular-nums">{{ data.scop ? data.scop.toFixed(1) : '—' }} kWh warmte</strong>
           uit de buitenlucht.
         </p>
       </div>
@@ -206,10 +206,10 @@ function toneStyle(tone?: string) { return toneColors[tone || 'idle'] }
           </div>
 
           <!-- Gemiddeld per dag -->
-          <div class="rounded-xl border border-rose-100 bg-rose-50 p-4">
-            <p class="text-[11px] font-medium text-rose-700 uppercase tracking-wider">Gemiddeld per dag</p>
-            <p class="mt-1 text-xl font-semibold text-rose-900 tabular-nums">{{ fmtKwh(data.avg_kwh_out_per_day, 0) }}</p>
-            <p class="text-[11px] text-rose-700">sinds installatie</p>
+          <div class="rounded-xl border border-orange-100 bg-orange-50 p-4">
+            <p class="text-[11px] font-medium text-orange-700 uppercase tracking-wider">Gemiddeld per dag</p>
+            <p class="mt-1 text-xl font-semibold text-orange-900 tabular-nums">{{ fmtKwh(data.avg_kwh_out_per_day, 0) }}</p>
+            <p class="text-[11px] text-orange-700">sinds installatie</p>
           </div>
         </div>
 
@@ -238,7 +238,7 @@ function toneStyle(tone?: string) { return toneColors[tone || 'idle'] }
             <p v-if="data.room_target_c != null" class="text-[10px] text-gray-400">doel {{ data.room_target_c.toFixed(0) }} °C</p>
           </div>
           <div class="rounded-xl bg-gray-50 p-3 text-center">
-            <div class="mx-auto mb-1 flex h-7 w-7 items-center justify-center rounded-full bg-rose-100 text-rose-600">
+            <div class="mx-auto mb-1 flex h-7 w-7 items-center justify-center rounded-full bg-orange-100 text-orange-600">
               <AppIcon name="zap" :size="14" />
             </div>
             <p class="text-[10px] text-gray-500 uppercase tracking-wider">Aanvoer</p>

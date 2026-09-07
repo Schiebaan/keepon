@@ -97,7 +97,7 @@ watch(() => route.fullPath, () => {
           v-if="hasHeatPump"
           to="/klant/warmtepomp"
           class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-          active-class="!bg-rose-50 !text-rose-700 !font-semibold"
+          active-class="!bg-orange-50 !text-orange-700 !font-semibold"
         >
           <AppIcon name="heat-pump" :size="16" />
           Warmtepomp

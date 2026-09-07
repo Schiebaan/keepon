@@ -128,7 +128,7 @@ function formatDate(iso?: string | null): string {
           <!-- Header -->
           <div class="border-b border-gray-100 px-6 py-4 flex items-center justify-between shrink-0">
             <div class="flex items-center gap-3">
-              <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
+              <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
                 <AppIcon name="heat-pump" :size="20" />
               </div>
               <div>
@@ -192,13 +192,13 @@ function formatDate(iso?: string | null): string {
                 :key="hp.id"
                 class="w-full text-left flex items-start gap-3 rounded-xl border px-3 py-2.5 transition-colors"
                 :class="selectedId === hp.id
-                  ? 'border-rose-300 bg-rose-50'
+                  ? 'border-orange-300 bg-orange-50'
                   : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'"
                 @click="selectedId = hp.id"
               >
                 <div
                   class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2"
-                  :class="selectedId === hp.id ? 'border-rose-500 bg-rose-500' : 'border-gray-300'"
+                  :class="selectedId === hp.id ? 'border-orange-500 bg-orange-500' : 'border-gray-300'"
                 >
                   <div v-if="selectedId === hp.id" class="h-1.5 w-1.5 rounded-full bg-white" />
                 </div>

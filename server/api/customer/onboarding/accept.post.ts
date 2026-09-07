@@ -28,6 +28,18 @@ export default defineEventHandler(async (event) => {
     ? body.accepted_modules.filter((m: any) => VALID_MODULES.has(m))
     : []
 
+  // Akkoord zonder modules levert een klant op die wél "actief" heet maar
+  // niet gefactureerd kan worden: computeCustomerCharge() vindt geen
+  // contractregels en /klant/contracten toont een lege lijst. De UI blokkeert
+  // dit al (knop disabled bij 0 selectie), maar zonder deze check kan een
+  // directe API-call alsnog zo'n stille breuk aanmaken.
+  if (!accepted_modules.length) {
+    throw createError({
+      statusCode: 400,
+      message: 'Kies ten minste één onderdeel om te activeren.',
+    })
+  }
+
   // Termijn-keuze van de klant — alleen 'monthly' of 'yearly' geaccepteerd.
   // Default 'monthly' als 'ie niets meegeeft of een onbekende waarde stuurt.
   const billing_interval: 'monthly' | 'yearly' =

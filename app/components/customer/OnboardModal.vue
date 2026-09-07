@@ -12,7 +12,7 @@ const emit = defineEmits<{
 
 const { partner } = usePartner()
 const { isConnected } = useIntegrations()
-const { createCustomer } = useCustomers()
+const { createCustomer } = useCustomers({ autoLoad: false })
 
 const grippConnected = computed(() => isConnected(partner.value.id, 'gripp'))
 const submitError = ref('')
@@ -58,6 +58,11 @@ function parseEurInput(v: string): number | null {
   if (!Number.isFinite(n) || n < 0) return null
   return Math.round(n * 100)
 }
+
+const addressComplete = computed(() =>
+  !!(form.value.street.trim() && form.value.house_number.trim()
+    && form.value.postal_code.trim() && form.value.city.trim()),
+)
 
 function toggleModule(type: string) {
   if (selectedModules.value.has(type)) {
@@ -365,6 +370,22 @@ async function handleSubmit() {
                 <p class="text-xs text-gray-500 mb-3">
                   Selecteer welke modules bij deze klant geïnstalleerd zijn — <strong>ten minste één is verplicht</strong>.
                   Zonder module kan de klant niks activeren in het portaal. Monitoring koppel je later in het klantdossier.
+                </p>
+
+                <!-- Zonnepanelen vereist later een volledig adres (Sundata legt
+                     de installatie vast op een fysieke locatie). Niet blokkerend
+                     — soms weet je het adres nog niet — maar wel nu melden,
+                     anders loop je er pas bij het koppelen tegenaan. -->
+                <p
+                  v-if="selectedModules.has('solar') && !addressComplete"
+                  class="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800"
+                >
+                  <AppIcon name="info" :size="13" class="mt-0.5 shrink-0" />
+                  <span>
+                    Voor zonnepanelen heb je straks een <strong>volledig adres</strong> nodig om de omvormer
+                    aan Sundata te koppelen. Je kunt nu doorgaan en het later aanvullen, maar meteen
+                    invullen scheelt een stap.
+                  </span>
                 </p>
 
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">

@@ -34,6 +34,40 @@ export function formatMollieAmount(cents: number): string {
 }
 
 /**
+ * Staat SEPA Direct Debit aan op het Mollie-profiel?
+ *
+ * Dit is geen theoretische vraag. De Mandates-API maakt gewoon een mandaat aan
+ * met status 'valid', óók als de methode niet geactiveerd is — je merkt het
+ * pas op de dag dat je écht wil incasseren, en krijgt dan een 403. Dat kan
+ * maanden na het afgeven van het mandaat zijn.
+ *
+ * Daarom checken we het vooraf. Uitkomst 15 minuten gecached: dit verandert
+ * hooguit één keer, wanneer de activering bij Mollie rondkomt.
+ */
+let _ddCache: { value: boolean; at: number } | null = null
+const DD_CACHE_MS = 15 * 60 * 1000
+
+export async function isDirectDebitEnabled(): Promise<boolean> {
+  if (_ddCache && Date.now() - _ddCache.at < DD_CACHE_MS) return _ddCache.value
+
+  let enabled = false
+  try {
+    const res = await fetch('https://api.mollie.com/v2/methods/directdebit', {
+      headers: { Authorization: `Bearer ${process.env.MOLLIE_API_KEY}` },
+    })
+    enabled = res.ok
+  } catch (e: any) {
+    // Netwerkprobleem is geen bewijs dat de methode uitstaat. Niet cachen, en
+    // de flow niet blokkeren op iets wat onze kant kan zijn.
+    console.error('[mollie] directdebit-check mislukt:', e?.message)
+    return true
+  }
+
+  _ddCache = { value: enabled, at: Date.now() }
+  return enabled
+}
+
+/**
  * Verwijder PII-velden uit een Mollie-payment-response voordat we 'm in
  * `payments.raw` JSONB opslaan. Data-minimalisatie: het IBAN + de naam op de
  * rekening + de BIC zitten al bij Mollie en hebben we niet nodig voor onze

@@ -27,7 +27,7 @@ const emit = defineEmits<{
 const { partner } = usePartner()
 
 // Wizard state
-const step = ref<'brand' | 'credentials' | 'creating' | 'verifying' | 'done' | 'error'>('brand')
+const step = ref<'brand' | 'credentials' | 'creating' | 'verifying' | 'done' | 'error' | 'address'>('brand')
 const errorMessage = ref('')
 
 // Step 1: Brand/driver selection
@@ -213,10 +213,60 @@ async function createPlant() {
       step.value = 'error'
     }
   } catch (e: any) {
-    errorMessage.value = e?.data?.message || 'Er ging iets mis. Probeer het opnieuw.'
-    step.value = 'error'
+    // Ontbrekend adres is geen echte fout maar een missend gegeven — we tonen
+    // een invulformulier in plaats van een dood "opnieuw proberen"-scherm.
+    // Sundata heeft het adres nodig omdat een plant fysiek ergens staat.
+    if (e?.data?.data?.code === 'INCOMPLETE_ADDRESS') {
+      const cur = e.data.data.current || {}
+      addressForm.value = {
+        street: cur.street || '',
+        house_number: cur.house_number || '',
+        postal_code: cur.postal_code || '',
+        city: cur.city || '',
+      }
+      addressError.value = ''
+      step.value = 'address'
+    } else {
+      errorMessage.value = e?.data?.message || 'Er ging iets mis. Probeer het opnieuw.'
+      step.value = 'error'
+    }
   } finally {
     isSubmitting.value = false
+  }
+}
+
+// --- Adres aanvullen zonder de wizard te verlaten -------------------------
+const addressForm = ref({ street: '', house_number: '', postal_code: '', city: '' })
+const addressSaving = ref(false)
+const addressError = ref('')
+
+const addressComplete = computed(() =>
+  !!(addressForm.value.street.trim() && addressForm.value.house_number.trim()
+    && addressForm.value.postal_code.trim() && addressForm.value.city.trim()),
+)
+
+async function saveAddressAndContinue() {
+  if (!addressComplete.value || addressSaving.value) return
+  addressSaving.value = true
+  addressError.value = ''
+  try {
+    const headers = await getAuthHeaders()
+    await $fetch(`/api/customers/${props.customerId}`, {
+      method: 'PUT',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: {
+        street: addressForm.value.street.trim(),
+        house_number: addressForm.value.house_number.trim(),
+        postal_code: addressForm.value.postal_code.trim(),
+        city: addressForm.value.city.trim(),
+      },
+    })
+    // Adres staat nu goed — pak de koppeling weer op waar 'ie strandde
+    await handleSubmit()
+  } catch (e: any) {
+    addressError.value = e?.data?.message || e?.message || 'Adres opslaan mislukt'
+  } finally {
+    addressSaving.value = false
   }
 }
 
@@ -473,6 +523,82 @@ const { onMouseDown: onBackdropDown, onClick: onBackdropClick } = useBackdropClo
                 >
                   Sluiten
                 </button>
+              </div>
+            </template>
+
+            <!-- Adres ontbreekt — inline aanvullen i.p.v. de wizard verlaten -->
+            <template v-if="step === 'address'">
+              <div class="py-2">
+                <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-50">
+                  <AppIcon name="map-pin" :size="24" class="text-amber-600" />
+                </div>
+                <p class="text-center text-lg font-semibold text-gray-900">Adres ontbreekt nog</p>
+                <p class="mx-auto mt-2 max-w-sm text-center text-sm text-gray-500">
+                  Sundata legt de installatie vast op een fysiek adres. Vul het hieronder aan —
+                  we slaan het op bij de klant en gaan daarna automatisch verder met koppelen.
+                </p>
+
+                <div class="mt-5 space-y-3">
+                  <div>
+                    <label class="label">Straat</label>
+                    <input
+                      v-model="addressForm.street"
+                      type="text"
+                      class="input"
+                      placeholder="bv. Lange Viestraat"
+                      autofocus
+                      @keyup.enter="saveAddressAndContinue"
+                    />
+                  </div>
+                  <div class="grid grid-cols-3 gap-3">
+                    <div>
+                      <label class="label">Huisnr.</label>
+                      <input
+                        v-model="addressForm.house_number"
+                        type="text"
+                        class="input"
+                        placeholder="2b"
+                        @keyup.enter="saveAddressAndContinue"
+                      />
+                    </div>
+                    <div>
+                      <label class="label">Postcode</label>
+                      <input
+                        v-model="addressForm.postal_code"
+                        type="text"
+                        class="input"
+                        placeholder="3511 BK"
+                        @keyup.enter="saveAddressAndContinue"
+                      />
+                    </div>
+                    <div>
+                      <label class="label">Plaats</label>
+                      <input
+                        v-model="addressForm.city"
+                        type="text"
+                        class="input"
+                        placeholder="Utrecht"
+                        @keyup.enter="saveAddressAndContinue"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <p v-if="addressError" class="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {{ addressError }}
+                </p>
+
+                <div class="mt-6 flex justify-between gap-3">
+                  <button class="btn-secondary" :disabled="addressSaving" @click="close">Annuleren</button>
+                  <button
+                    class="rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+                    :disabled="!addressComplete || addressSaving"
+                    @click="saveAddressAndContinue"
+                  >
+                    <span v-if="addressSaving" class="mr-1.5 inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent align-middle" />
+                    {{ addressSaving ? 'Opslaan...' : 'Opslaan en doorgaan' }}
+                  </button>
+                </div>
               </div>
             </template>
 

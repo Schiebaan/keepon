@@ -210,7 +210,7 @@ const moduleIcons: Record<string, string> = { solar: 'solar', heat_pump: 'heat-p
 const moduleLabels: Record<string, string> = { solar: 'Zonnepanelen', heat_pump: 'Warmtepomp', ev_charger: 'Laadpaal', battery: 'Batterij' }
 const moduleTints: Record<string, { bg: string; text: string }> = {
   solar:     { bg: 'bg-amber-50',   text: 'text-amber-600' },
-  heat_pump: { bg: 'bg-rose-50',    text: 'text-rose-600' },
+  heat_pump: { bg: 'bg-orange-50',  text: 'text-orange-600' },
   ev_charger:{ bg: 'bg-sky-50',     text: 'text-sky-600' },
   battery:   { bg: 'bg-violet-50',  text: 'text-violet-600' },
 }

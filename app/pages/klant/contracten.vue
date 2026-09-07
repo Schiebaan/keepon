@@ -133,7 +133,7 @@ const intervalLabel = computed(() => {
         :class="{
           'border-green-200 bg-green-50/60': data.mandate.state === 'mandate_active',
           'border-amber-200 bg-amber-50/60': data.mandate.state === 'mandate_pending',
-          'border-rose-200 bg-rose-50/60': data.mandate.state === 'mandate_not_set' || data.mandate.state === 'mandate_skipped',
+          'border-red-200 bg-red-50/60': data.mandate.state === 'mandate_not_set' || data.mandate.state === 'mandate_skipped',
         }"
       >
         <div class="flex items-start gap-3">
@@ -142,7 +142,7 @@ const intervalLabel = computed(() => {
             :class="{
               'bg-green-100 text-green-700': data.mandate.state === 'mandate_active',
               'bg-amber-100 text-amber-700': data.mandate.state === 'mandate_pending',
-              'bg-rose-100 text-rose-700': data.mandate.state === 'mandate_not_set' || data.mandate.state === 'mandate_skipped',
+              'bg-red-100 text-red-700': data.mandate.state === 'mandate_not_set' || data.mandate.state === 'mandate_skipped',
             }"
           >
             <AppIcon
@@ -166,14 +166,14 @@ const intervalLabel = computed(() => {
               </p>
             </template>
             <template v-else-if="data.mandate.state === 'mandate_skipped'">
-              <p class="text-base font-semibold text-rose-900">Incasso staat nog niet aan</p>
-              <p class="mt-0.5 mb-3 text-sm text-rose-800/80">
+              <p class="text-base font-semibold text-red-900">Incasso staat nog niet aan</p>
+              <p class="mt-0.5 mb-3 text-sm text-red-800/80">
                 Je hebt eerder gekozen om dit later te regelen. Stel je IBAN in zodat je
                 {{ partner.name }}-servicekosten automatisch worden afgeschreven.
               </p>
               <NuxtLink
                 to="/welkom/incasso"
-                class="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700"
+                class="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
               >
                 <AppIcon name="credit-card" :size="14" />
                 Incasso instellen
@@ -181,14 +181,14 @@ const intervalLabel = computed(() => {
             </template>
             <template v-else>
               <!-- mandate_not_set -->
-              <p class="text-base font-semibold text-rose-900">Incasso nog instellen</p>
-              <p class="mt-0.5 mb-3 text-sm text-rose-800/80">
+              <p class="text-base font-semibold text-red-900">Incasso nog instellen</p>
+              <p class="mt-0.5 mb-3 text-sm text-red-800/80">
                 Je hebt akkoord gegeven op {{ data.accepted_at ? `het servicecontract op ${fmtDate(data.accepted_at)}` : 'het servicecontract' }},
                 maar je IBAN is nog niet ingesteld. Doe dit nu zodat {{ partner.name }} de maandkosten automatisch kan afschrijven.
               </p>
               <NuxtLink
                 to="/welkom/incasso"
-                class="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700"
+                class="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
               >
                 <AppIcon name="credit-card" :size="14" />
                 Incasso instellen

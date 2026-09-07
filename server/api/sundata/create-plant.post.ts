@@ -33,9 +33,27 @@ export default defineEventHandler(async (event) => {
     .single()
 
   if (!customer?.street || !customer?.house_number || !customer?.postal_code || !customer?.city) {
+    // Machine-leesbare code zodat de wizard hier een invulformulier kan tonen
+    // in plaats van een dood "opnieuw proberen"-scherm. Sundata heeft een
+    // volledig adres nodig omdat een plant fysiek ergens staat.
     throw createError({
       statusCode: 400,
       message: 'Adres van de klant is niet compleet. Vul straat, huisnummer, postcode en woonplaats in bij de klantgegevens.',
+      data: {
+        code: 'INCOMPLETE_ADDRESS',
+        missing: {
+          street: !customer?.street,
+          house_number: !customer?.house_number,
+          postal_code: !customer?.postal_code,
+          city: !customer?.city,
+        },
+        current: {
+          street: customer?.street || '',
+          house_number: customer?.house_number || '',
+          postal_code: customer?.postal_code || '',
+          city: customer?.city || '',
+        },
+      },
     })
   }
 

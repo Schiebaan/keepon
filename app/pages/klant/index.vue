@@ -110,14 +110,14 @@ function todayText(): { text: string; pending: boolean } {
         class="mb-6 rounded-2xl border p-4 flex items-start gap-3"
         :class="{
           'border-amber-200 bg-amber-50/70': mandateState === 'pending',
-          'border-rose-200 bg-rose-50/70': mandateState === 'skipped' || mandateState === 'not_set',
+          'border-red-200 bg-red-50/70': mandateState === 'skipped' || mandateState === 'not_set',
         }"
       >
         <div
           class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
           :class="{
             'bg-amber-100 text-amber-700': mandateState === 'pending',
-            'bg-rose-100 text-rose-700': mandateState === 'skipped' || mandateState === 'not_set',
+            'bg-red-100 text-red-700': mandateState === 'skipped' || mandateState === 'not_set',
           }"
         >
           <AppIcon :name="mandateState === 'pending' ? 'clock' : 'warning'" :size="18" />
@@ -130,8 +130,8 @@ function todayText(): { text: string; pending: boolean } {
             </p>
           </template>
           <template v-else>
-            <p class="text-sm font-semibold text-rose-900">Incasso nog instellen</p>
-            <p class="mt-0.5 text-xs text-rose-800/80">
+            <p class="text-sm font-semibold text-red-900">Incasso nog instellen</p>
+            <p class="mt-0.5 text-xs text-red-800/80">
               Zet je IBAN in zodat {{ partner.name }} de servicekosten automatisch kan afschrijven.
             </p>
           </template>
@@ -139,7 +139,7 @@ function todayText(): { text: string; pending: boolean } {
         <NuxtLink
           v-if="mandateState !== 'pending'"
           to="/welkom/incasso"
-          class="shrink-0 inline-flex items-center gap-1 rounded-xl bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700 whitespace-nowrap"
+          class="shrink-0 inline-flex items-center gap-1 rounded-xl bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 whitespace-nowrap"
         >
           <AppIcon name="credit-card" :size="12" />
           Instellen
@@ -274,21 +274,21 @@ function todayText(): { text: string; pending: boolean } {
       <NuxtLink
         v-if="heatPump && heatPump.linked"
         to="/klant/warmtepomp"
-        class="mb-6 block rounded-2xl border border-rose-100 bg-gradient-to-br from-rose-50 to-orange-50 p-5 transition-shadow hover:shadow-sm no-underline"
+        class="mb-6 block rounded-2xl border border-orange-100 bg-gradient-to-br from-orange-50 to-orange-50 p-5 transition-shadow hover:shadow-sm no-underline"
       >
         <div class="flex items-start justify-between">
           <div class="flex items-start gap-3">
-            <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-600">
+            <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-orange-100 text-orange-600">
               <AppIcon name="heat-pump" :size="22" />
             </div>
             <div>
-              <p class="text-xs font-medium text-rose-700 uppercase tracking-wider">Warmtepomp</p>
+              <p class="text-xs font-medium text-orange-700 uppercase tracking-wider">Warmtepomp</p>
               <p class="text-lg font-semibold text-gray-900">
                 {{ heatPump.name || (heatPump.brand && heatPump.model ? `${heatPump.brand} ${heatPump.model}` : 'Warmtepomp') }}
               </p>
               <p class="text-xs text-gray-500">
-                <span v-if="warmtepomp?.state_label" class="inline-flex items-center gap-1 text-rose-700">
-                  <span class="h-1.5 w-1.5 rounded-full bg-rose-500" /> {{ warmtepomp.state_label }}
+                <span v-if="warmtepomp?.state_label" class="inline-flex items-center gap-1 text-orange-700">
+                  <span class="h-1.5 w-1.5 rounded-full bg-orange-500" /> {{ warmtepomp.state_label }}
                 </span>
                 <span v-else>Gekoppeld met Weheat</span>
               </p>

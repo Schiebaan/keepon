@@ -1,5 +1,6 @@
 import { getMollie, redactMollieResponse } from '~~/server/utils/mollie'
 import { getServiceRoleClient } from '~~/server/utils/supabase'
+import { finalizeMandateFromPayment } from '~~/server/utils/mandate'
 
 /**
  * Mollie webhook receiver.
@@ -57,12 +58,16 @@ export default defineEventHandler(async (event) => {
     .update(updates)
     .eq('mollie_payment_id', payment.id)
 
-  // If this is the first-payment (mandate validation), capture the mandate
-  // onto the customer so the admin can trigger recurring charges later.
-  if (payment.status === 'paid' && payment.sequenceType === 'first' && payment.mandateId && payment.metadata?.upsol_customer_id) {
-    await supabase.from('customers')
-      .update({ mollie_mandate_id: payment.mandateId })
-      .eq('id', payment.metadata.upsol_customer_id)
+  // Geslaagde mandaatvalidatie (de €0,01 via iDEAL): mandaat vastleggen én de
+  // onboarding afronden. Dezelfde functie draait als de klant terugkeert van
+  // zijn bank — wie er eerst is maakt niet uit, de tweede doet niets.
+  const finalized = await finalizeMandateFromPayment(supabase, payment)
+  if (finalized.changed) {
+    await auditLog(event, 'onboarding.mandate_ideal_completed', 'customer', payment.metadata.upsol_customer_id, {
+      mollie_payment_id: payment.id,
+      mollie_mandate_id: finalized.mandate_id,
+      via: 'webhook',
+    })
   }
 
   await auditLog(event, `payment.${payment.status}`, 'payment', null, {

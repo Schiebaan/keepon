@@ -7,7 +7,7 @@ const route = useRoute()
 const customerId = route.params.id as string
 
 const { partner } = usePartner()
-const { customers, updateCustomer } = useCustomers()
+const { customers, updateCustomer } = useCustomers({ autoLoad: false })
 
 // Detail page fetches the single customer directly — much faster than
 // waiting for the full /api/customers list to load. If the row happens to
@@ -154,6 +154,7 @@ async function saveCustomer() {
 // `open-connector` with the integration key ('solar' | 'weheat' | 'easee').
 const showSundataWizard = ref(false)
 const showWeheatWizard = ref(false)
+const showEaseeWizard = ref(false)
 const sundataProductData = ref<{ capacityWp?: string; orientation?: string; tilt?: string }>({})
 
 function openSundataWizard() {
@@ -185,13 +186,14 @@ function openSundataWizard() {
 function openConnector(type: string) {
   if (type === 'solar') openSundataWizard()
   else if (type === 'weheat') showWeheatWizard.value = true
-  else if (type === 'easee') {
-    // No Easee wizard yet — manual DB linkage for now.
-    // (Could add an EaseeWizard following the WeheatWizard pattern later.)
-  }
+  else if (type === 'easee') showEaseeWizard.value = true
 }
 
 async function handleWeheatCompleted(_r: { heatpumpId: string; serial: string }) {
+  await productListRef.value?.refresh?.()
+}
+
+async function handleEaseeCompleted(_r: { chargerId: string; name: string }) {
   await productListRef.value?.refresh?.()
 }
 
@@ -203,7 +205,7 @@ async function handleSundataCompleted(_result: { deviceId: string; plantName: st
 }
 
 const confirm = useConfirm()
-const { deleteCustomer } = useCustomers()
+const { deleteCustomer } = useCustomers({ autoLoad: false })
 const router = useRouter()
 
 // --- Pricing-kaart -------------------------------------------------------
@@ -1079,6 +1081,14 @@ function handleSaveNotes() {
         :customer-id="customerId"
         :customer-name="customer.full_name || customer.email"
         @completed="handleWeheatCompleted"
+      />
+
+      <!-- Easee Wizard -->
+      <EaseeWizard
+        v-model="showEaseeWizard"
+        :customer-id="customerId"
+        :customer-name="customer.full_name || customer.email"
+        @completed="handleEaseeCompleted"
       />
     </template>
   </div>

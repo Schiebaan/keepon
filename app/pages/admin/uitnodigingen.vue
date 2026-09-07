@@ -4,7 +4,7 @@ import type { Customer } from '~~/shared/types/database'
 
 definePageMeta({ layout: 'admin', middleware: ['auth', 'role-partner'] })
 
-const { customers, isLoading: customersLoading, total: customersTotal, hasMore: customersHasMore, refresh: refreshCustomers, loadMore: loadMoreCustomers } = useCustomers()
+const { customers, isLoading: customersLoading, total: customersTotal, hasMore: customersHasMore, refresh: refreshCustomers, loadMore: loadMoreCustomers } = useCustomers({ autoLoad: false })
 const confirm = useConfirm()
 
 // --- "Klant uitnodigen" modal (verhuisd vanaf /admin/klanten) ---
@@ -257,6 +257,97 @@ async function sendOneInvite(c: Customer) {
   }
 }
 
+// --- Uitnodiging(en) verwijderen ---
+// Verwijdert de klantrij + alles wat eraan hangt (producten, documenten,
+// auth-account). Alleen bedoeld voor klanten die nog geen akkoord hebben
+// gegeven — die staan per definitie op deze pagina.
+const deletingId = ref<string | null>(null)
+const bulkDeleting = ref(false)
+const deleteError = ref('')
+
+async function deleteOne(c: Customer) {
+  if (deletingId.value || bulkDeleting.value) return
+  const ok = await confirm({
+    title: 'Uitnodiging verwijderen?',
+    message:
+      `${c.full_name || c.email}\n\n` +
+      'De klant en het bijbehorende account worden definitief verwijderd. ' +
+      'Een al verstuurde inloglink werkt daarna niet meer. Dit kan niet ongedaan worden gemaakt.',
+    confirmLabel: 'Verwijderen',
+    dangerous: true,
+  })
+  if (!ok) return
+
+  deletingId.value = c.id
+  deleteError.value = ''
+  try {
+    const supabase = useSupabaseClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) throw new Error('Niet ingelogd')
+
+    await $fetch(`/api/customers/${c.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+    // Uit de selectie halen zodat de bulk-teller klopt
+    if (selected.value.has(c.id)) {
+      const next = new Set(selected.value)
+      next.delete(c.id)
+      selected.value = next
+    }
+    await refreshCustomers(currentFilters.value)
+  } catch (e: any) {
+    deleteError.value = `${c.full_name || c.email}: ${e?.data?.message || e?.message || 'Verwijderen mislukt'}`
+  } finally {
+    deletingId.value = null
+  }
+}
+
+async function deleteSelected() {
+  if (!selected.value.size || bulkDeleting.value) return
+  const names = selectedCustomers.value.slice(0, 5).map(c => c.full_name || c.email)
+  const extra = selected.value.size > 5 ? `\n…en nog ${selected.value.size - 5}` : ''
+  const ok = await confirm({
+    title: `${selected.value.size} uitnodiging${selected.value.size === 1 ? '' : 'en'} verwijderen?`,
+    message:
+      names.join('\n') + extra +
+      '\n\nDeze klanten en hun accounts worden definitief verwijderd. ' +
+      'Al verstuurde inloglinks werken daarna niet meer.',
+    confirmLabel: 'Verwijderen',
+    dangerous: true,
+  })
+  if (!ok) return
+
+  bulkDeleting.value = true
+  deleteError.value = ''
+  const failed: string[] = []
+  try {
+    const supabase = useSupabaseClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) throw new Error('Niet ingelogd')
+    const headers = { Authorization: `Bearer ${session.access_token}` }
+
+    // Sequentieel — geen parallelle storm op de auth-admin API, en we kunnen
+    // per klant melden wat er misging.
+    for (const c of [...selectedCustomers.value]) {
+      try {
+        await $fetch(`/api/customers/${c.id}`, { method: 'DELETE', headers })
+      } catch (e: any) {
+        failed.push(`${c.full_name || c.email} (${e?.data?.message || 'onbekende fout'})`)
+      }
+    }
+    selected.value = new Set()
+    await refreshCustomers(currentFilters.value)
+    if (failed.length) {
+      deleteError.value = `${failed.length} niet verwijderd — ${failed.slice(0, 3).join('; ')}`
+    }
+  } catch (e: any) {
+    deleteError.value = e?.data?.message || e?.message || 'Verwijderen mislukt'
+  } finally {
+    bulkDeleting.value = false
+  }
+}
+
 async function redownload(batch: BatchRow) {
   try {
     const supabase = useSupabaseClient()
@@ -316,6 +407,22 @@ function relativeDays(iso: string | null | undefined): string {
         </p>
       </div>
       <div class="flex items-center gap-2">
+        <!-- Bulk verwijderen — alleen zichtbaar zodra er iets geselecteerd is,
+             zodat de gevaarlijke actie niet permanent staat te lonken. -->
+        <button
+          v-if="selected.size"
+          class="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+          :disabled="bulkDeleting"
+          @click="deleteSelected"
+        >
+          <svg v-if="bulkDeleting" class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <AppIcon v-else name="trash" :size="14" />
+          {{ bulkDeleting ? 'Verwijderen...' : 'Verwijder' }}
+          <span class="rounded-full bg-red-100 px-1.5 py-0.5 text-xs">{{ selected.size }}</span>
+        </button>
         <button
           class="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
           :disabled="!selected.size"
@@ -330,6 +437,15 @@ function relativeDays(iso: string | null | undefined): string {
           Klant uitnodigen
         </button>
       </div>
+    </div>
+
+    <!-- Foutmelding bij (deels) mislukt verwijderen -->
+    <div v-if="deleteError" class="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800">
+      <AppIcon name="warning" :size="14" class="mt-0.5 shrink-0" />
+      <span class="flex-1">{{ deleteError }}</span>
+      <button class="shrink-0 text-red-400 hover:text-red-700" title="Sluiten" @click="deleteError = ''">
+        <AppIcon name="x" :size="14" />
+      </button>
     </div>
 
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_300px]">
@@ -443,20 +559,33 @@ function relativeDays(iso: string | null | undefined): string {
                     <AppIcon :name="sendResult.type === 'success' ? 'check-circle' : 'alert-circle'" :size="12" />
                     {{ sendResult.type === 'success' ? 'Verstuurd' : 'Mislukt' }}
                   </div>
-                  <button
-                    v-else
-                    class="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                    :disabled="sendingForId === c.id"
-                    :title="c.latest_batch ? `Laatste mail: ${c.latest_batch.name}` : 'Nog niet eerder uitgenodigd'"
-                    @click.stop="sendOneInvite(c)"
-                  >
-                    <svg v-if="sendingForId === c.id" class="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
-                      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-                      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    <AppIcon v-else name="send" :size="11" />
-                    {{ sendingForId === c.id ? 'Bezig...' : 'Stuur uitnodiging' }}
-                  </button>
+                  <div v-else class="inline-flex items-center gap-1">
+                    <button
+                      class="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      :disabled="sendingForId === c.id || deletingId === c.id || bulkDeleting"
+                      :title="c.latest_batch ? `Laatste mail: ${c.latest_batch.name}` : 'Nog niet eerder uitgenodigd'"
+                      @click.stop="sendOneInvite(c)"
+                    >
+                      <svg v-if="sendingForId === c.id" class="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      <AppIcon v-else name="send" :size="11" />
+                      {{ sendingForId === c.id ? 'Bezig...' : 'Stuur uitnodiging' }}
+                    </button>
+                    <button
+                      class="rounded-lg p-1.5 text-gray-300 transition-colors hover:bg-red-50 hover:text-red-500 disabled:opacity-50"
+                      :disabled="deletingId === c.id || bulkDeleting || sendingForId === c.id"
+                      title="Uitnodiging verwijderen"
+                      @click.stop="deleteOne(c)"
+                    >
+                      <svg v-if="deletingId === c.id" class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      <AppIcon v-else name="trash" :size="13" />
+                    </button>
+                  </div>
                 </td>
               </tr>
             </tbody>

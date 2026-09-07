@@ -97,7 +97,7 @@ const googleMapsUrl = computed(() => {
           <!-- Connection pipe -->
           <line x1="248" y1="185" x2="240" y2="185" stroke="#94a3b8" stroke-width="2" stroke-dasharray="3,2" />
           <!-- Label -->
-          <text x="268" y="225" text-anchor="middle" class="fill-rose-600 text-[8px] font-medium">Actief</text>
+          <text x="268" y="225" text-anchor="middle" class="fill-orange-600 text-[8px] font-medium">Actief</text>
         </g>
         <g v-else>
           <rect x="248" y="170" width="40" height="45" rx="4" fill="#f1f5f9" stroke="#d1d5db" stroke-width="1" opacity="0.4" />

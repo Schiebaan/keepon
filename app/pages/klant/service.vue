@@ -433,7 +433,7 @@ function moduleIcon(m: string | null): string {
 function moduleTint(m: string | null): { bg: string; text: string } {
   switch (m) {
     case 'solar':    return { bg: 'bg-amber-50',   text: 'text-amber-600' }
-    case 'heat_pump':return { bg: 'bg-rose-50',    text: 'text-rose-600' }
+    case 'heat_pump':return { bg: 'bg-orange-50',    text: 'text-orange-600' }
     case 'ev_charger':return{ bg: 'bg-sky-50',     text: 'text-sky-600' }
     case 'battery':  return { bg: 'bg-violet-50',  text: 'text-violet-600' }
     default:         return { bg: 'bg-gray-100',   text: 'text-gray-500' }
