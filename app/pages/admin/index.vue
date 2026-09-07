@@ -5,11 +5,33 @@ import { getModuleTheme } from '~/utils/module-theme'
 definePageMeta({ layout: 'admin', middleware: ['auth', 'role-partner'] })
 
 const { partner } = usePartner()
-const { customers, isLoading: customersLoading } = useCustomers()
+
+// Bewust NIET meeliften op de gedeelde klanten-state van useCustomers().
+// Die wordt door /admin/klanten gevuld met alleen 'accepted' en door
+// /admin/uitnodigingen met alleen 'pending'. Kwam je via een van die pagina's
+// hierheen, dan telde dit dashboard hun filter mee en stond er een te laag
+// getal. We vragen hier dus onze eigen, ongefilterde telling op.
+//
+// En we nemen `total` van de server, niet rows.length — die lijst is op 100
+// afgekapt, dus vanaf de 101e klant zou de tegel blijven staan op 100.
+const { query: queryCustomers } = useCustomers({ autoLoad: false })
+const customerCount = ref(0)
+const customersLoading = ref(true)
+
+async function loadCustomerCount() {
+  try {
+    const r = await queryCustomers({ limit: 1 })
+    customerCount.value = r.total
+  } catch {
+    // Achtergrondverversing: laatst bekende telling laten staan.
+  } finally {
+    customersLoading.value = false
+  }
+}
 const stats = computed(() => [
   {
     label: 'Klanten',
-    value: customers.value.length,
+    value: customerCount.value,
     change: '',
     changePositive: true,
     icon: 'users',
@@ -63,7 +85,9 @@ async function loadActivity() {
       headers: { Authorization: `Bearer ${session.access_token}` },
     })
   } catch {
-    recentActivity.value = []
+    // Bij een achtergrondverversing de bestaande lijst laten staan; alleen bij
+    // de eerste laadpoging is een lege lijst het eerlijke antwoord.
+    if (activityLoading.value) recentActivity.value = []
   } finally {
     activityLoading.value = false
   }
@@ -120,6 +144,15 @@ async function loadModuleStats() {
 }
 
 onMounted(loadModuleStats)
+onMounted(loadCustomerCount)
+
+// Het dashboard laadde alles één keer in onMounted en daarna nooit meer. Wie
+// het scherm open liet staan keek naar cijfers van uren geleden.
+const { lastRefreshed } = useLiveRefresh(
+  () => Promise.all([loadActivity(), loadModuleStats(), loadCustomerCount()]),
+  { intervalMs: 60_000 },
+)
+const bijgewerkt = useRelativeTime(lastRefreshed)
 
 const moduleBreakdown = computed(() => [
   {
@@ -152,11 +185,14 @@ const totalActiveModules = computed(() =>
     <!-- Page header -->
     <div class="mb-6">
       <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
-      <p class="mt-1 text-sm text-gray-500">Overzicht van {{ partner.name }}</p>
+      <p class="mt-1 text-sm text-gray-500">
+        Overzicht van {{ partner.name }}
+        <span v-if="bijgewerkt" class="text-gray-400"> · bijgewerkt {{ bijgewerkt }}</span>
+      </p>
     </div>
 
     <!-- Welcome banner when no customers yet -->
-    <div v-if="!customersLoading && customers.length === 0" class="mb-6 rounded-2xl border-2 border-dashed border-gray-200 bg-white p-8 text-center">
+    <div v-if="!customersLoading && customerCount === 0" class="mb-6 rounded-2xl border-2 border-dashed border-gray-200 bg-white p-8 text-center">
       <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100">
         <AppIcon name="users" :size="28" class="text-gray-400" />
       </div>
