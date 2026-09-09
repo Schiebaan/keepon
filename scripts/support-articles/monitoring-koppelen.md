@@ -48,9 +48,9 @@ om te koppelen.
   of adres en bevestigt.
 - **Warmtepomp** → opent de Weheat-wizard. Je kiest de warmtepomp uit de lijst,
   herkenbaar aan het serienummer.
-- **Laadpaal** → opent de Easee-wizard. Je kiest de laadpaal uit de lijst,
-  herkenbaar aan het laadpaal-ID. Heeft de laadpaal in Easee geen naam
-  gekregen, dan tonen we het ID — dat is uniek per paal.
+- **Laadpaal** → opent de Easee-wizard. Die werkt in twee stappen: eerst zoek
+  je de klant op naam of adres, daarna kies je de laadpaal. Meestal hangt er
+  precies één aan een installatie; die staat dan al geselecteerd.
 
 Zodra gekoppeld verschijnt er een groen label *"Gekoppeld"* bij het product,
 en ziet je klant vanaf dat moment live data in zijn portaal.
@@ -64,6 +64,13 @@ en ziet je klant vanaf dat moment live data in zijn portaal.
 Zonder koppeling ziet de klant het modulekaartje wél, maar zonder cijfers.
 
 ## Waar het in de praktijk misgaat
+
+**Wat je van Easee wél en niet ziet.**
+De laadsessies en het verbruik komen normaal binnen. De live status ("laadt nu",
+"storing") niet: dat vraagt een hoger toegangsniveau op je Easee-account dan
+standaard is ingesteld. Wil je dat wel, vraag Easee dan om het toegangsniveau
+van je installateursaccount te verhogen. Tot die tijd melden we hier gewoon
+niets over — je krijgt dus geen valse storingen.
 
 **"De leverancier toont wel apparaten die ik hier niet zie."**
 Wij tonen exact wat de API van de leverancier ons geeft. Zie je in de Easee-
