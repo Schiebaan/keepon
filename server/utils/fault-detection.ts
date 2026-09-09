@@ -14,33 +14,55 @@ export interface Fault { kind: FaultKind; detail: string; raw: string }
  * Easee, chargerOpMode. Zelfde nummers als in de klantweergave.
  * 0 = niet bereikbaar, 5 = storing. De rest zijn normale laadtoestanden.
  */
-export function easeeFault(state: string): Fault | null {
-  const mode = Number(state)
+export function easeeFault(signal: { state: string | null; stateAvailable: boolean }): Fault | null {
+  // Geen live status beschikbaar op dit toegangsniveau. Dat is een beperking
+  // van het Easee-account, geen storing bij de klant — dus melden we niets.
+  // Zou dit wél een storing opleveren, dan stond er bij elke paal permanent
+  // een melding en werd het hele signaal waardeloos.
+  if (!signal.stateAvailable || signal.state === null) return null
+
+  const mode = Number(signal.state)
   if (mode === 0) {
-    return { kind: 'unreachable', detail: 'Laadpaal is niet bereikbaar — geen stroom of geen internet.', raw: state }
+    return { kind: 'unreachable', detail: 'Laadpaal is niet bereikbaar — geen stroom of geen internet.', raw: signal.state }
   }
   if (mode === 5) {
-    return { kind: 'error', detail: 'Laadpaal meldt een storing en kan niet laden.', raw: state }
+    return { kind: 'error', detail: 'Laadpaal meldt een storing en kan niet laden.', raw: signal.state }
   }
   return null
 }
 
 /**
- * Weheat, heat_pump_state.
+ * Weheat.
  *
- * Bewust een lijst van wat fout is, en niet "alles wat niet in de goede lijst
- * staat". Weheat kan morgen een nieuwe normale toestand introduceren, en dan
- * wil je niet dat alle warmtepompen tegelijk als storing binnenkomen.
+ * Weheat geeft `state` als getal (bij Volt4U staat alles op 40) en publiceert
+ * geen enum-documentatie — hun OpenAPI-spec staat achter een 403. Wij gaan die
+ * nummers dus niet interpreteren: één verkeerde aanname en er gaan bij 29
+ * warmtepompen tegelijk valse storingen uit.
+ *
+ * Wat wél hard is: hoe oud de laatste meting is. Een pomp die niet meer
+ * rapporteert is aantoonbaar een probleem, en de laatste logregel blijft
+ * gewoon staan als hij offline gaat — alleen de tijdstempel verraadt het.
+ *
+ * Drempel op 24 uur. Alle pompen bij Volt4U rapporteren nu binnen de minuut,
+ * dus een etmaal stilte is ruim buiten normaal.
  */
-const WEHEAT_FOUT = ['error', 'fault', 'alarm', 'failure', 'blocked', 'lockout']
+const WEHEAT_UREN_DREMPEL = 24
 
-export function weheatFault(state: string): Fault | null {
-  const s = (state || '').toLowerCase()
-  if (!s || s === 'unknown') {
-    return { kind: 'unreachable', detail: 'Warmtepomp geeft geen status door.', raw: state }
+export function weheatFault(state: string, measuredAt?: string | null): Fault | null {
+  if (!measuredAt) {
+    return { kind: 'unreachable', detail: 'Warmtepomp geeft geen meetgegevens door.', raw: String(state) }
   }
-  if (WEHEAT_FOUT.some(f => s.includes(f))) {
-    return { kind: 'error', detail: `Warmtepomp meldt een storing (${state}).`, raw: state }
+  const uren = (Date.now() - new Date(measuredAt).getTime()) / 3600000
+  if (!Number.isFinite(uren)) return null
+  if (uren >= WEHEAT_UREN_DREMPEL) {
+    const dagen = Math.floor(uren / 24)
+    return {
+      kind: 'stale',
+      detail: dagen >= 1
+        ? `Warmtepomp rapporteert al ${dagen} ${dagen === 1 ? 'dag' : 'dagen'} niets meer.`
+        : `Warmtepomp rapporteert al ${Math.floor(uren)} uur niets meer.`,
+      raw: `last_log:${measuredAt}`,
+    }
   }
   return null
 }

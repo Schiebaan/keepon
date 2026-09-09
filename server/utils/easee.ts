@@ -73,6 +73,121 @@ async function refreshToken(refresh_token: string): Promise<string> {
   return resp.access_token
 }
 
+/**
+ * Alle sites waar dit account bij kan — de installaties van klanten dus.
+ *
+ * Easee pagineert met `offset`, niet met `page`: dat laatste wordt genegeerd
+ * en geeft telkens dezelfde eerste honderd terug. Bij Volt4U scheelde dat
+ * 15 installaties die anders onzichtbaar bleven.
+ */
+export interface EaseeSite {
+  id: number
+  name: string
+  address: string | null
+  installerAlias: string | null
+  levelOfAccess: number | null
+}
+
+export async function listEaseeSites(credentials: Record<string, string>): Promise<EaseeSite[]> {
+  const token = await getToken(credentials)
+  const alles: EaseeSite[] = []
+  const PAGINA = 100
+
+  for (let offset = 0; offset < 5000; offset += PAGINA) {
+    const batch = await $fetch<any[]>(`${API_URL}/sites?offset=${offset}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!Array.isArray(batch) || !batch.length) break
+
+    for (const s of batch) {
+      alles.push({
+        id: s.id,
+        name: s.name || `Site ${s.id}`,
+        address: formatAddress(s.address),
+        installerAlias: s.installerAlias || null,
+        levelOfAccess: s.levelOfAccess ?? null,
+      })
+    }
+    if (batch.length < PAGINA) break
+  }
+  return alles
+}
+
+/** De laadpalen die onder één site hangen. Meestal precies één. */
+export async function listEaseeSiteChargers(
+  credentials: Record<string, string>,
+  siteId: number | string,
+): Promise<{ id: string; name: string }[]> {
+  const token = await getToken(credentials)
+  const site = await $fetch<any>(`${API_URL}/sites/${siteId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const palen = (site?.circuits || []).flatMap((c: any) => c.chargers || [])
+  return palen.map((p: any) => ({
+    id: p.id,
+    // Easee laat de naam vaak leeg of op "1" staan; dan is het id herkenbaarder.
+    name: p.name && String(p.name).length > 2 ? p.name : `Laadpaal ${p.id}`,
+  }))
+}
+
+/** Easee geeft het adres als object; hier tot één leesbare regel. */
+function formatAddress(a: any): string | null {
+  if (!a) return null
+  if (typeof a === 'string') return a
+  const delen = [a.street, a.buildingNumber, a.postCode, a.city].filter(Boolean)
+  return delen.length ? delen.join(' ') : null
+}
+
+/**
+ * Wat we van een laadpaal te weten kunnen komen.
+ *
+ * /state geeft de live laadtoestand, maar vereist een hoger toegangsniveau dan
+ * levelOfAccess 1 — en op dat niveau staat elke paal bij Volt4U. Daar krijgen
+ * we dus een 404, ook op palen die het account zélf bezit.
+ *
+ * Wat op niveau 1 wél werkt is de laatste laadsessie. Dat is geen live status,
+ * maar wel bruikbaar: een paal die maanden geen sessie meer had verdient een
+ * blik. En belangrijker: het voorkomt dat we de hele koppeling als "stuk"
+ * bestempelen terwijl er alleen een rechtenbeperking is.
+ */
+export interface EaseeSignal {
+  state: string | null
+  lastSessionEnd: string | null
+  stateAvailable: boolean
+}
+
+export async function getEaseeSignal(
+  credentials: Record<string, string>,
+  chargerId: string,
+): Promise<EaseeSignal> {
+  const token = await getToken(credentials)
+  const H = { Authorization: `Bearer ${token}` }
+
+  let state: string | null = null
+  let stateAvailable = true
+  try {
+    const s = await $fetch<any>(`${API_URL}/chargers/${chargerId}/state`, { headers: H })
+    state = s?.chargerOpMode?.toString() ?? null
+  } catch (e: any) {
+    // 404 hier betekent "niet beschikbaar op dit toegangsniveau", niet "paal weg".
+    if (e?.status === 404 || e?.statusCode === 404 || /404/.test(String(e?.message))) {
+      stateAvailable = false
+    } else {
+      throw e
+    }
+  }
+
+  let lastSessionEnd: string | null = null
+  try {
+    const sess = await $fetch<any>(`${API_URL}/chargers/${chargerId}/sessions/latest`, { headers: H })
+    lastSessionEnd = sess?.sessionEnd || sess?.sessionStart || null
+  } catch {
+    // Nog nooit geladen is geen storing.
+  }
+
+  return { state, lastSessionEnd, stateAvailable }
+}
+
 export const easeeConnector: IntegrationConnector = {
   type: 'easee',
 

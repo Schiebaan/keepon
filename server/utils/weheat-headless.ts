@@ -4,13 +4,21 @@ import { createHash, randomBytes } from 'crypto'
  * Headless Weheat OAuth-code-with-PKCE login. Re-used by both the
  * /admin/settings "Verbinden via Weheat" flow AND the connector's
  * auto-reauth path when the stored refresh_token has expired (Weheat's
- * refresh tokens live for only 1 hour).
+ * refresh_token is verlopen). Met de third-party-client leven refresh-tokens
+ * 30 dagen, dus dit pad is een uitzondering en niet de regel.
  *
  * Mirrors the official api.weheat.nl/third_party/api/debugger flow.
  */
 
 const REALM_BASE = 'https://auth.weheat.nl/realms/Weheat/protocol/openid-connect'
-const CLIENT_ID = 'weheat-backend'
+// Weheat's officiële client voor externe partijen. Stond op 'weheat-backend',
+// en dáár kwam de storing vandaan: die client accepteert deze redirect_uri niet
+// meer, dus kregen we een 400-foutpagina zonder inlogformulier terug. De
+// melding "login-formulier niet gevonden" wees dus naar het verkeerde probleem.
+//
+// Deze client-id staat in Weheat's eigen third-party debugger
+// (api.weheat.nl/third_party/api/debugger).
+const CLIENT_ID = 'weheat-third-party-debugger'
 const REDIRECT_URI = 'https://api.weheat.nl/third_party/api/debugger'
 const SCOPE = 'profile email'
 

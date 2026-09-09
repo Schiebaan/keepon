@@ -3,11 +3,26 @@
  * Koppel een Easee-laadpaal aan een klant. Zelfde opzet als WeheatWizard:
  * lijst ophalen via het installateursaccount → laadpaal kiezen → koppelen.
  */
+/**
+ * Twee stappen, en dat is geen omweg maar een verbetering.
+ *
+ * Easee's /api/chargers geeft alleen de palen die het account zélf bezit — bij
+ * Volt4U twee, terwijl er 115 klantinstallaties zijn. Die zitten onder "sites",
+ * en die dragen wél de naam en het adres van de klant. Dus zoekt de
+ * installateur eerst zijn klant op, en pas daarna halen we de paal op.
+ *
+ * Bijkomend voordeel: zoeken op "Jansen" of een straatnaam werkt, in plaats van
+ * op een laadpaal-ID dat niemand uit zijn hoofd kent.
+ */
+interface Site {
+  id: number
+  name: string
+  address: string | null
+  installerAlias: string | null
+}
 interface Charger {
   id: string
   name: string
-  serial?: string | null
-  createdOn?: string | null
 }
 
 const props = defineProps<{
@@ -26,23 +41,26 @@ const isOpen = computed({
   set: (v: boolean) => emit('update:modelValue', v),
 })
 
+const sites = ref<Site[]>([])
 const chargers = ref<Charger[]>([])
 const loading = ref(false)
+const loadingChargers = ref(false)
 const loadError = ref('')
 const search = ref('')
+const selectedSite = ref<Site | null>(null)
 const selectedId = ref<string | null>(null)
 const linking = ref(false)
 const linkError = ref('')
 const done = ref(false)
 
-const filteredChargers = computed(() => {
+const filteredSites = computed(() => {
   const q = search.value.trim().toLowerCase()
-  if (!q) return chargers.value
-  return chargers.value.filter(c =>
-    c.id?.toLowerCase().includes(q)
-    || c.name?.toLowerCase().includes(q)
-    || c.serial?.toLowerCase().includes(q),
-  )
+  if (!q) return sites.value.slice(0, 60)
+  return sites.value.filter(s =>
+    s.name?.toLowerCase().includes(q)
+    || s.address?.toLowerCase().includes(q)
+    || s.installerAlias?.toLowerCase().includes(q),
+  ).slice(0, 60)
 })
 
 const selectedCharger = computed(() => chargers.value.find(c => c.id === selectedId.value) || null)
@@ -58,20 +76,48 @@ async function loadDevices() {
   loading.value = true
   loadError.value = ''
   try {
-    const data = await $fetch<Charger[]>('/api/integrations/easee/devices', {
+    sites.value = await $fetch<Site[]>('/api/integrations/easee/sites', {
       headers: await authHeaders(),
-    })
-    chargers.value = data || []
+    }) || []
   } catch (e: any) {
-    loadError.value = e?.data?.message || e?.message || 'Kan de lijst met laadpalen niet laden'
+    loadError.value = e?.data?.message || e?.message || 'Kan de installaties niet laden'
   } finally {
     loading.value = false
   }
 }
 
+async function pickSite(site: Site) {
+  selectedSite.value = site
+  selectedId.value = null
+  chargers.value = []
+  loadingChargers.value = true
+  linkError.value = ''
+  try {
+    chargers.value = await $fetch<Charger[]>('/api/integrations/easee/site-chargers', {
+      headers: await authHeaders(),
+      query: { site_id: site.id },
+    }) || []
+    // Vrijwel elke installatie heeft er precies één; dan is kiezen zinloos.
+    if (chargers.value.length === 1) selectedId.value = chargers.value[0].id
+  } catch (e: any) {
+    linkError.value = e?.data?.message || 'Kon de laadpalen van deze installatie niet ophalen.'
+  } finally {
+    loadingChargers.value = false
+  }
+}
+
+function backToSites() {
+  selectedSite.value = null
+  chargers.value = []
+  selectedId.value = null
+  linkError.value = ''
+}
+
 watch(() => props.modelValue, (open) => {
   if (open) {
     selectedId.value = null
+    selectedSite.value = null
+    chargers.value = []
     search.value = ''
     linkError.value = ''
     done.value = false
@@ -89,11 +135,7 @@ async function handleLink() {
       headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
       body: {
         charger_id: selectedCharger.value.id,
-        // Easee laat de naam vaak leeg of op "1" staan; dan is het
-        // charger-ID herkenbaarder voor de installateur.
-        name: selectedCharger.value.name && selectedCharger.value.name.length > 2
-          ? selectedCharger.value.name
-          : `Laadpaal ${selectedCharger.value.id}`,
+        name: selectedCharger.value.name,
         brand: 'Easee',
       },
     })
@@ -162,7 +204,7 @@ function formatDate(iso?: string | null): string {
               <!-- Laden -->
               <div v-if="loading" class="py-12 text-center">
                 <div class="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
-                <p class="mt-3 text-sm text-gray-500">Laadpalen ophalen bij Easee...</p>
+                <p class="mt-3 text-sm text-gray-500">Installaties ophalen bij Easee...</p>
               </div>
 
               <!-- Ophalen mislukt -->
@@ -170,7 +212,7 @@ function formatDate(iso?: string | null): string {
                 <div class="flex items-start gap-2">
                   <AppIcon name="warning" :size="16" class="mt-0.5 shrink-0 text-red-600" />
                   <div class="min-w-0">
-                    <p class="text-sm font-medium text-red-900">Kan de laadpalen niet ophalen</p>
+                    <p class="text-sm font-medium text-red-900">Kan de installaties niet ophalen</p>
                     <p class="mt-1 text-sm text-red-800/90">{{ loadError }}</p>
                     <button class="mt-3 text-sm font-medium text-red-700 underline hover:text-red-900" @click="loadDevices">
                       Opnieuw proberen
@@ -179,35 +221,41 @@ function formatDate(iso?: string | null): string {
                 </div>
               </div>
 
-              <!-- Geen laadpalen -->
-              <div v-else-if="!chargers.length" class="rounded-xl border-2 border-dashed border-gray-200 py-10 text-center">
+              <!-- Geen installaties -->
+              <div v-else-if="!sites.length" class="rounded-xl border-2 border-dashed border-gray-200 py-10 text-center">
                 <AppIcon name="ev-charger" :size="32" class="mx-auto mb-3 text-gray-300" />
-                <p class="text-sm text-gray-600">Geen laadpalen gevonden op je Easee-account.</p>
+                <p class="text-sm text-gray-600">Geen installaties gevonden op je Easee-account.</p>
                 <p class="mx-auto mt-2 max-w-sm text-xs text-gray-500">
-                  Wij tonen precies wat Easee ons teruggeeft. Zie je in de Easee-app wél laadpalen?
-                  Dan hangen die aan een ander account dan het gekoppelde installateursaccount.
+                  Wij tonen de installaties waar jouw Easee-account toegang op heeft.
+                  Zie je hier niets terwijl je in de Easee-app wel klanten hebt?
+                  Dan hangen die aan een ander account.
                 </p>
               </div>
 
-              <!-- Lijst -->
-              <template v-else>
-                <div class="relative mb-3">
-                  <AppIcon name="search" :size="15" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input
-                    v-model="search"
-                    type="search"
-                    class="input pl-9 text-sm"
-                    placeholder="Zoek op naam of laadpaal-ID..."
-                  />
+              <!-- Stap 2: laadpaal binnen de gekozen installatie -->
+              <template v-else-if="selectedSite">
+                <button type="button" class="mb-3 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800" @click="backToSites">
+                  <AppIcon name="chevron-right" :size="14" class="rotate-180" />
+                  Andere installatie kiezen
+                </button>
+
+                <div class="mb-3 rounded-xl bg-sky-50 px-3 py-2">
+                  <p class="text-sm font-medium text-sky-900">{{ selectedSite.name }}</p>
+                  <p v-if="selectedSite.address" class="text-xs text-sky-700/80">{{ selectedSite.address }}</p>
                 </div>
 
-                <p class="mb-2 text-xs text-gray-500">
-                  {{ filteredChargers.length }} van {{ chargers.length }} laadpalen
-                </p>
+                <div v-if="loadingChargers" class="py-8 text-center">
+                  <div class="mx-auto h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600" />
+                  <p class="mt-2 text-sm text-gray-500">Laadpalen ophalen...</p>
+                </div>
 
-                <div class="space-y-2">
+                <div v-else-if="!chargers.length" class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  Op deze installatie staat geen laadpaal geregistreerd bij Easee.
+                </div>
+
+                <div v-else class="space-y-2">
                   <button
-                    v-for="c in filteredChargers"
+                    v-for="c in chargers"
                     :key="c.id"
                     type="button"
                     class="flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left transition-colors"
@@ -221,18 +269,51 @@ function formatDate(iso?: string | null): string {
                       <AppIcon v-if="selectedId === c.id" name="check" :size="12" class="text-white" />
                     </span>
                     <div class="min-w-0 flex-1">
-                      <p class="text-sm font-medium text-gray-900">
-                        {{ c.name && c.name.length > 2 ? c.name : `Laadpaal ${c.id}` }}
-                      </p>
-                      <p class="mt-0.5 text-xs text-gray-500">
-                        <span class="font-mono">{{ c.id }}</span>
-                        <template v-if="c.createdOn">
-                          · in gebruik sinds {{ formatDate(c.createdOn) }}
-                        </template>
-                      </p>
+                      <p class="text-sm font-medium text-gray-900">{{ c.name }}</p>
+                      <p class="mt-0.5 font-mono text-xs text-gray-500">{{ c.id }}</p>
                     </div>
                   </button>
                 </div>
+              </template>
+
+              <!-- Stap 1: klant zoeken -->
+              <template v-else>
+                <div class="relative mb-3">
+                  <AppIcon name="search" :size="15" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    v-model="search"
+                    type="search"
+                    class="input pl-9 text-sm"
+                    placeholder="Zoek op naam of adres van de klant..."
+                  />
+                </div>
+
+                <p class="mb-2 text-xs text-gray-500">
+                  {{ sites.length }} installaties op je Easee-account<span v-if="search"> · {{ filteredSites.length }} gevonden</span>
+                </p>
+
+                <div class="space-y-1.5">
+                  <button
+                    v-for="s in filteredSites"
+                    :key="s.id"
+                    type="button"
+                    class="flex w-full items-center gap-3 rounded-xl border border-gray-200 p-3 text-left transition-colors hover:border-gray-300 hover:bg-gray-50"
+                    @click="pickSite(s)"
+                  >
+                    <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-600">
+                      <AppIcon name="ev-charger" :size="16" />
+                    </div>
+                    <div class="min-w-0 flex-1">
+                      <p class="truncate text-sm font-medium text-gray-900">{{ s.name }}</p>
+                      <p v-if="s.address" class="truncate text-xs text-gray-500">{{ s.address }}</p>
+                    </div>
+                    <AppIcon name="chevron-right" :size="15" class="shrink-0 text-gray-300" />
+                  </button>
+                </div>
+
+                <p v-if="!search && sites.length > 60" class="mt-3 text-center text-xs text-gray-400">
+                  Eerste 60 getoond — zoek om de rest te vinden.
+                </p>
               </template>
             </div>
 

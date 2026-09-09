@@ -3,8 +3,11 @@ import { getServiceRoleClient } from './supabase'
 import type { H3Event } from 'h3'
 
 const TOKEN_URL = 'https://auth.weheat.nl/realms/Weheat/protocol/openid-connect/token'
-const API_URL = 'https://api.weheat.nl/third_party/api/v1'
-const CLIENT_ID = 'weheat-backend'
+// Stond op .../third_party/api/v1 — dat pad hoort bij Weheat's debugger-pagina,
+// niet bij de API zelf. Vandaar 403 en 404 op alles wat per pomp opgevraagd werd.
+const API_URL = 'https://api.weheat.nl/api/v1'
+// Zie weheat-headless.ts: dit is Weheat's client voor externe partijen.
+const CLIENT_ID = 'weheat-third-party-debugger'
 
 /**
  * Weheat token management.
@@ -30,7 +33,8 @@ interface WeheatCreds {
   access_token?: string
   access_token_expires_at?: string
   // Stored so we can transparently re-login when refresh_token expires.
-  // Weheat's refresh tokens only live ~1 hour, so this happens often.
+  // Met de third-party-client leven refresh-tokens 30 dagen, dus dit gebeurt
+  // zelden — alleen als een koppeling een maand ongebruikt bleef.
   username?: string
   password?: string
 }
@@ -95,7 +99,7 @@ async function getAccessToken(credentials: WeheatCreds, event?: H3Event, partner
       await persistCreds(event, partnerId, next)
       return next.access_token!
     } catch (e: any) {
-      // Refresh tokens at Weheat live ~1 hour. If expired, fall through to
+      // Refresh-tokens leven 30 dagen. Is er toch één verlopen, val dan terug op
       // the headless re-login (only possible if we have password on file).
       if (!credentials.username || !credentials.password) {
         throw new Error('Weheat-verbinding verlopen. Klik in /admin/settings op "Verbinden via Weheat" om opnieuw in te loggen.')
@@ -177,21 +181,31 @@ export const weheatConnector: IntegrationConnector = {
     return { success: true, device_id: deviceId }
   },
 
+  /**
+   * Er bestaat geen /status-endpoint bij Weheat; de actuele toestand komt uit
+   * de laatste logregel. De veldnamen hierboven (heat_pump_state, output_power,
+   * cop, dhw_temperature) bestonden evenmin — die hadden stilzwijgend nullen
+   * opgeleverd zodra de aanroep ooit wél was geslaagd.
+   */
   async getDeviceStatus(credentials, deviceId) {
     const token = await getAccessToken(credentials as WeheatCreds)
-    const status = await $fetch<any>(`${API_URL}/heat-pumps/${deviceId}/status`, {
+    const log = await $fetch<any>(`${API_URL}/heat-pumps/${deviceId}/logs/latest`, {
       headers: { Authorization: `Bearer ${token}` },
     })
 
     return {
-      state: status.heat_pump_state || 'unknown',
+      state: log?.state !== undefined && log?.state !== null ? String(log.state) : 'unknown',
       metrics: {
-        output_power: status.output_power || 0,
-        cop: status.cop || 0,
-        water_temperature: status.dhw_temperature || 0,
-        compressor_rpm: status.compressor_percentage || 0,
+        water_in: log?.tWaterIn ?? 0,
+        water_out: log?.tWaterOut ?? 0,
+        air_in: log?.tAirIn ?? 0,
+        compressor_rpm: log?.rpm ?? 0,
+        signal_strength: log?.signalStrength ?? 0,
       },
-    }
+      // Hoe oud is deze meting? Een pomp die offline gaat houdt zijn laatste
+      // logregel; alleen de tijdstempel verraadt dat er niets meer binnenkomt.
+      measured_at: log?.timestamp || null,
+    } as any
   },
 
   async getDeviceData(credentials, deviceId, from, to) {

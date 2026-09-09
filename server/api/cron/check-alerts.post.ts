@@ -1,6 +1,6 @@
 import { getServiceRoleClient } from '~~/server/utils/supabase'
 import { weheatConnector } from '~~/server/utils/weheat'
-import { easeeConnector } from '~~/server/utils/easee'
+import { getEaseeSignal } from '~~/server/utils/easee'
 import { easeeFault, weheatFault, sundataFault, type Fault } from '~~/server/utils/fault-detection'
 import { sendEmail, buildDeviceAlertDigestEmail } from '~~/server/utils/email'
 
@@ -83,11 +83,10 @@ export default defineEventHandler(async (event) => {
       if (!c) continue
 
       if (type === 'easee') {
-        const s = await easeeConnector.getDeviceStatus(c, extern)
-        fout = easeeFault(s.state)
+        fout = easeeFault(await getEaseeSignal(c, extern))
       } else if (type === 'weheat') {
-        const s = await weheatConnector.getDeviceStatus(c, extern)
-        fout = weheatFault(s.state)
+        const s: any = await weheatConnector.getDeviceStatus(c, extern)
+        fout = weheatFault(s.state, s.measured_at)
       } else if (type === 'sundata') {
         fout = await sundataFault(event, p.partner_id, p.serial_number || '')
       } else {
