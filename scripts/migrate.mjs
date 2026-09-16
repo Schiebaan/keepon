@@ -46,6 +46,11 @@ await client.query(`
     applied_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )
 `)
+// Meteen afschermen. Supabase geeft anon/authenticated standaard volledige
+// rechten op tabellen in public; zonder dit kon iedereen met de publieke
+// anon-sleutel deze administratie via de API lezen en wijzigen (zie 035).
+await client.query('ALTER TABLE schema_migrations ENABLE ROW LEVEL SECURITY')
+await client.query('REVOKE ALL ON schema_migrations FROM anon, authenticated')
 
 const { rows } = await client.query('SELECT filename FROM schema_migrations')
 const gedaan = new Set(rows.map(r => r.filename))
