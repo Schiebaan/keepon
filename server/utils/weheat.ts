@@ -2,7 +2,7 @@ import type { IntegrationConnector } from './connectors'
 import { getServiceRoleClient } from './supabase'
 import type { H3Event } from 'h3'
 import {
-  WEHEAT_TOKEN_URL, WEHEAT_API_URL, weheatClientParams,
+  WEHEAT_TOKEN_URL, WEHEAT_API_URL, WEHEAT_CLIENT_SECRET, weheatClientParams,
   WeheatAccessBlockedError, isWeheatBlocked,
 } from './weheat-config'
 
@@ -123,7 +123,35 @@ async function vernieuw(credentials: WeheatCreds, event?: H3Event, partnerId?: s
     }
   }
 
-  // 2) Nieuwe login met gebruikersnaam en wachtwoord.
+  // 2a) Officiële route: een door Weheat uitgegeven client met secret, en
+  //     gewoon gebruikersnaam + wachtwoord (password grant). Zo staat het in
+  //     Weheat's eigen bibliotheek (wh-python 2026.9.3). Werkt alleen als
+  //     WEHEAT_CLIENT_SECRET gezet is; zonder secret staat Weheat dit niet toe.
+  if (WEHEAT_CLIENT_SECRET && credentials.username && credentials.password) {
+    const r = await $fetch<any>(WEHEAT_TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'password',
+        ...weheatClientParams(),
+        username: credentials.username,
+        password: credentials.password,
+      }).toString(),
+    })
+    const t: TokenSet = {
+      access_token: r.access_token,
+      refresh_token: r.refresh_token,
+      access_expires_at: Date.now() + (r.expires_in || 300) * 1000,
+      refresh_expires_at: r.refresh_expires_in ? Date.now() + r.refresh_expires_in * 1000 : undefined,
+    }
+    tokenCache.set(key, t)
+    await persistCreds(event, partnerId, toCreds(credentials, t))
+    console.log('[weheat] ingelogd met eigen client')
+    return t.access_token
+  }
+
+  // 2b) Zonder eigen client: de browser-login van de debugger nabootsen.
+  //     Sinds 11 september geeft die geen toegang meer tot data.
   if (credentials.username && credentials.password) {
     const { loginWeheatHeadless } = await import('./weheat-headless')
     const r: any = await loginWeheatHeadless(credentials.username, credentials.password)
