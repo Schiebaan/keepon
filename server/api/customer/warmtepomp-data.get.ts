@@ -2,7 +2,10 @@ import { getServiceRoleClient } from '~~/server/utils/supabase'
 import { getWeheatAccessToken } from '~~/server/utils/weheat'
 import { memoryCache } from '~~/server/utils/cache'
 
-const API_URL = 'https://api.weheat.nl/third_party/api/v1'
+import { WEHEAT_API_URL } from '~~/server/utils/weheat-config'
+
+// Eén bron voor het pad; zie weheat-config.ts.
+const API_URL = WEHEAT_API_URL
 
 // Cache live + totals data for 60s. Customer-side polling has a manual
 // refresh button which sends ?fresh=1 to bypass this cache.
@@ -109,6 +112,20 @@ export default defineEventHandler(async (event) => {
     heatpumpLogCache.getOrLoad(heatpumpId, fetchLog),
     heatpumpTotalCache.getOrLoad(heatpumpId, fetchTotal),
   ])
+
+  // Faalt alles, dan hebben we geen data — niet "een pomp die niets doet".
+  // Zonder deze controle kreeg de klant nullen te zien alsof zijn warmtepomp
+  // stilstond, terwijl het probleem aan de koppeling lag. Geen interne details
+  // richting de klant; de installateur krijgt de echte oorzaak via de
+  // storingsmelding op het dashboard.
+  if (metaRes.status === 'rejected' && logRes.status === 'rejected' && totalRes.status === 'rejected') {
+    console.error('[warmtepomp-data] geen enkele Weheat-aanroep gelukt:', (logRes as PromiseRejectedResult).reason?.data?.message || (logRes as PromiseRejectedResult).reason?.message)
+    return {
+      linked: true,
+      heatpump_id: heatpumpId,
+      error: 'De meetgegevens van je warmtepomp zijn tijdelijk niet beschikbaar. Je installateur is hiervan op de hoogte.',
+    }
+  }
 
   const meta = metaRes.status === 'fulfilled' ? metaRes.value : null
   const log = logRes.status === 'fulfilled' ? logRes.value : null

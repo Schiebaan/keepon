@@ -17,7 +17,9 @@ import { loginWeheatHeadless } from '~~/server/utils/weheat-headless'
  * with a server-side key separate from the service-role JWT.
  */
 
-const HEAT_PUMPS_URL = 'https://api.weheat.nl/third_party/api/v1/heat-pumps'
+import { WEHEAT_API_URL } from '~~/server/utils/weheat-config'
+
+const HEAT_PUMPS_URL = `${WEHEAT_API_URL}/heat-pumps`
 
 export default defineEventHandler(async (event) => {
   const { user } = await requireRole(event, 'partner_admin')

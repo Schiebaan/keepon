@@ -1,3 +1,4 @@
+import { WEHEAT_API_URL } from '~~/server/utils/weheat-config'
 import { getServiceRoleClient } from '~~/server/utils/supabase'
 
 export default defineEventHandler(async (event) => {
@@ -82,7 +83,7 @@ export default defineEventHandler(async (event) => {
       })
       if (!tokenResp.access_token) return { success: false, error: 'Geen access token ontvangen' }
 
-      const heatPumps = await $fetch<any[]>('https://api.weheat.nl/third_party/api/v1/heat-pumps', {
+      const heatPumps = await $fetch<any[]>(`${WEHEAT_API_URL}/heat-pumps`, {
         headers: { Authorization: `Bearer ${tokenResp.access_token}` },
       })
       return { success: true, details: { heatPumps: heatPumps.length } }

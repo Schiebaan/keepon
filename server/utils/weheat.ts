@@ -1,127 +1,176 @@
 import type { IntegrationConnector } from './connectors'
 import { getServiceRoleClient } from './supabase'
 import type { H3Event } from 'h3'
+import {
+  WEHEAT_TOKEN_URL, WEHEAT_API_URL, weheatClientParams,
+  WeheatAccessBlockedError, isWeheatBlocked,
+} from './weheat-config'
 
-const TOKEN_URL = 'https://auth.weheat.nl/realms/Weheat/protocol/openid-connect/token'
-// Stond op .../third_party/api/v1 — dat pad hoort bij Weheat's debugger-pagina,
-// niet bij de API zelf. Vandaar 403 en 404 op alles wat per pomp opgevraagd werd.
-const API_URL = 'https://api.weheat.nl/api/v1'
-// Zie weheat-headless.ts: dit is Weheat's client voor externe partijen.
-const CLIENT_ID = 'weheat-third-party-debugger'
+const API_URL = WEHEAT_API_URL
 
 /**
- * Weheat token management.
+ * Tokenbeheer voor Weheat.
  *
- * The third-party API rejects password-grant tokens — it requires real
- * browser-auth-context claims (auth_time, acr, sid). So we use the OAuth 2.0
- * authorization-code flow with PKCE (same as the Weheat API debugger).
+ * Dit ging structureel mis. De vernieuwde tokens werden alleen opgeslagen als
+ * de aanroeper een H3-event én partner-id meegaf, en geen enkele
+ * connector-methode deed dat. Gevolg: de credentials stonden sinds 15 mei
+ * stil, elke aanroep probeerde eerst een refresh-token van mei, en logde daarna
+ * volledig opnieuw in via het inlogscherm. Per storingscontrole vijf logins,
+ * plus één per keer dat een klant zijn warmtepomppagina opende.
  *
- * After connecting, we have a refresh_token stored on the partner's
- * `integration_credentials` row. We use that to mint fresh access tokens.
- *
- * The credentials shape:
- *   {
- *     refresh_token: string,
- *     access_token: string,
- *     access_token_expires_at: ISO string,
- *     connected_at: ISO string,
- *   }
+ * Nu:
+ *   1. Een token in het geheugen, zolang hij geldig is.
+ *   2. Single-flight: gelijktijdige aanroepen voor hetzelfde account wachten op
+ *      dezelfde vernieuwing in plaats van elk apart in te loggen.
+ *   3. Opslaan werkt altijd — met partner-id als die er is, anders op het
+ *      Weheat-account zelf.
+ *   4. Een verlopen refresh-token wordt direct opgeruimd, zodat de volgende
+ *      keer niet eerst een zinloze poging volgt.
  */
 
 interface WeheatCreds {
   refresh_token?: string
+  refresh_token_expires_at?: string
   access_token?: string
   access_token_expires_at?: string
-  // Stored so we can transparently re-login when refresh_token expires.
-  // Met de third-party-client leven refresh-tokens 30 dagen, dus dit gebeurt
-  // zelden — alleen als een koppeling een maand ongebruikt bleef.
+  connected_at?: string
+  // Voor een nieuwe login als de refresh-token verlopen is.
   username?: string
   password?: string
 }
 
-async function exchangeRefreshToken(refreshToken: string): Promise<{ access_token: string; refresh_token?: string; expires_in: number }> {
-  const body = new URLSearchParams({
-    grant_type: 'refresh_token',
-    client_id: CLIENT_ID,
-    refresh_token: refreshToken,
-  })
-  return await $fetch<any>(TOKEN_URL, {
+interface TokenSet {
+  access_token: string
+  refresh_token?: string
+  access_expires_at: number
+  refresh_expires_at?: number
+}
+
+const tokenCache = new Map<string, TokenSet>()
+const inFlight = new Map<string, Promise<string>>()
+const MARGE_MS = 60_000
+
+function cacheKey(c: WeheatCreds): string {
+  return c.username || c.refresh_token?.slice(-24) || 'weheat'
+}
+
+async function exchangeRefreshToken(refreshToken: string) {
+  return await $fetch<any>(WEHEAT_TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      ...weheatClientParams(),
+      refresh_token: refreshToken,
+    }).toString(),
   })
 }
 
 /**
- * Get a valid access token. If the cached one is still fresh, returns it.
- * Otherwise refreshes via refresh_token and persists the rotated token back
- * onto the integration_credentials row.
- *
- * Optionally takes the H3 event so we can persist; if omitted (e.g. called
- * from a non-event context) we just refresh in-memory.
+ * Schrijf de nieuwe tokens terug. Zonder partner-id zoeken we de rij op het
+ * Weheat-account: in de storingscontrole is er geen event, en juist daar
+ * werden de tokens nooit bewaard.
  */
 async function persistCreds(event: H3Event | undefined, partnerId: string | undefined, next: WeheatCreds) {
-  if (!event || !partnerId) return
   try {
-    const supabase = getServiceRoleClient(event)
-    await supabase
-      .from('integration_credentials')
-      .update({ credentials: next })
-      .eq('partner_id', partnerId)
-      .eq('integration_type', 'weheat')
-  } catch {
-    // Non-fatal; the in-memory token still works for this request.
+    const supabase = getServiceRoleClient(event as H3Event)
+    let q = supabase.from('integration_credentials').update({ credentials: next }).eq('integration_type', 'weheat')
+    if (partnerId) q = q.eq('partner_id', partnerId)
+    else if (next.username) q = q.eq('credentials->>username', next.username)
+    else return
+    const { error } = await q
+    if (error) console.error('[weheat] tokens opslaan mislukt:', error.message)
+  } catch (e: any) {
+    // Niet fataal: de token in het geheugen werkt voor deze aanroep.
+    console.error('[weheat] tokens opslaan mislukt:', e?.message)
   }
+}
+
+function toCreds(base: WeheatCreds, t: TokenSet): WeheatCreds {
+  return {
+    ...base,
+    access_token: t.access_token,
+    access_token_expires_at: new Date(t.access_expires_at).toISOString(),
+    refresh_token: t.refresh_token,
+    refresh_token_expires_at: t.refresh_expires_at ? new Date(t.refresh_expires_at).toISOString() : undefined,
+  }
+}
+
+async function vernieuw(credentials: WeheatCreds, event?: H3Event, partnerId?: string): Promise<string> {
+  const key = cacheKey(credentials)
+  const bekend = tokenCache.get(key)
+  const refresh = bekend?.refresh_token || credentials.refresh_token
+  const refreshExp = bekend?.refresh_expires_at
+    ?? (credentials.refresh_token_expires_at ? new Date(credentials.refresh_token_expires_at).getTime() : undefined)
+
+  // 1) Refresh-token, als die er is en niet aantoonbaar verlopen.
+  if (refresh && (!refreshExp || refreshExp > Date.now() + MARGE_MS)) {
+    try {
+      const r = await exchangeRefreshToken(refresh)
+      const t: TokenSet = {
+        access_token: r.access_token,
+        refresh_token: r.refresh_token || refresh,
+        access_expires_at: Date.now() + (r.expires_in || 300) * 1000,
+        refresh_expires_at: r.refresh_expires_in ? Date.now() + r.refresh_expires_in * 1000 : refreshExp,
+      }
+      tokenCache.set(key, t)
+      await persistCreds(event, partnerId, toCreds(credentials, t))
+      return t.access_token
+    } catch {
+      // Verlopen of ingetrokken. Niet bewaren, anders proberen we hem volgende
+      // keer weer.
+      tokenCache.delete(key)
+    }
+  }
+
+  // 2) Nieuwe login met gebruikersnaam en wachtwoord.
+  if (credentials.username && credentials.password) {
+    const { loginWeheatHeadless } = await import('./weheat-headless')
+    const r: any = await loginWeheatHeadless(credentials.username, credentials.password)
+    const t: TokenSet = {
+      access_token: r.access_token,
+      refresh_token: r.refresh_token,
+      access_expires_at: Date.now() + (r.expires_in || 300) * 1000,
+      refresh_expires_at: r.refresh_expires_in ? Date.now() + r.refresh_expires_in * 1000 : undefined,
+    }
+    tokenCache.set(key, t)
+    await persistCreds(event, partnerId, toCreds(credentials, t))
+    console.log('[weheat] nieuwe login uitgevoerd')
+    return t.access_token
+  }
+
+  throw new Error('Weheat-verbinding verlopen. Klik in /admin/settings op "Verbinden via Weheat" om opnieuw in te loggen.')
 }
 
 async function getAccessToken(credentials: WeheatCreds, event?: H3Event, partnerId?: string): Promise<string> {
   if (!credentials.refresh_token && !(credentials.username && credentials.password)) {
     throw new Error('Weheat is nog niet verbonden. Klik in /admin/settings op "Verbinden via Weheat".')
   }
+  const key = cacheKey(credentials)
 
-  // Use cached access_token if still valid (with 60s safety margin)
-  const exp = credentials.access_token_expires_at ? new Date(credentials.access_token_expires_at).getTime() : 0
-  if (credentials.access_token && exp > Date.now() + 60_000) {
-    return credentials.access_token
+  // Geheugen eerst, dan de opgeslagen token.
+  const bekend = tokenCache.get(key)
+  if (bekend && bekend.access_expires_at > Date.now() + MARGE_MS) return bekend.access_token
+  const opgeslagenExp = credentials.access_token_expires_at ? new Date(credentials.access_token_expires_at).getTime() : 0
+  if (credentials.access_token && opgeslagenExp > Date.now() + MARGE_MS) return credentials.access_token
+
+  // Loopt er al een vernieuwing voor dit account? Dan meeliften.
+  const lopend = inFlight.get(key)
+  if (lopend) return lopend
+
+  const p = vernieuw(credentials, event, partnerId).finally(() => inFlight.delete(key))
+  inFlight.set(key, p)
+  return p
+}
+
+/** $fetch naar Weheat, met herkenning van hun blokkade voor externe clients. */
+async function weheatGet<T = any>(path: string, token: string): Promise<T> {
+  try {
+    return await $fetch<T>(`${API_URL}${path}`, { headers: { Authorization: `Bearer ${token}` } })
+  } catch (e: any) {
+    if (isWeheatBlocked(e)) throw new WeheatAccessBlockedError()
+    throw e
   }
-
-  // 1) Try the refresh-token grant first. Cheapest path when still valid.
-  if (credentials.refresh_token) {
-    try {
-      const resp = await exchangeRefreshToken(credentials.refresh_token)
-      const next: WeheatCreds = {
-        ...credentials,
-        access_token: resp.access_token,
-        // Keycloak rotates refresh tokens — use the new one if returned
-        refresh_token: resp.refresh_token || credentials.refresh_token,
-        access_token_expires_at: new Date(Date.now() + (resp.expires_in - 60) * 1000).toISOString(),
-      }
-      await persistCreds(event, partnerId, next)
-      return next.access_token!
-    } catch (e: any) {
-      // Refresh-tokens leven 30 dagen. Is er toch één verlopen, val dan terug op
-      // the headless re-login (only possible if we have password on file).
-      if (!credentials.username || !credentials.password) {
-        throw new Error('Weheat-verbinding verlopen. Klik in /admin/settings op "Verbinden via Weheat" om opnieuw in te loggen.')
-      }
-    }
-  }
-
-  // 2) Refresh failed (or no refresh_token at all) — do a fresh headless login.
-  if (credentials.username && credentials.password) {
-    const { loginWeheatHeadless } = await import('./weheat-headless')
-    const tokens = await loginWeheatHeadless(credentials.username, credentials.password)
-    const next: WeheatCreds = {
-      ...credentials,
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
-      access_token_expires_at: new Date(Date.now() + (tokens.expires_in - 60) * 1000).toISOString(),
-    }
-    await persistCreds(event, partnerId, next)
-    return next.access_token
-  }
-
-  throw new Error('Weheat-verbinding verlopen. Klik in /admin/settings op "Verbinden via Weheat".')
 }
 
 export const weheatConnector: IntegrationConnector = {
@@ -130,9 +179,7 @@ export const weheatConnector: IntegrationConnector = {
   async verifyCredentials(credentials) {
     try {
       const token = await getAccessToken(credentials as WeheatCreds)
-      const res = await $fetch(`${API_URL}/heat-pumps`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const res = await weheatGet(`/heat-pumps`, token)
       return Array.isArray(res)
     } catch {
       return false
@@ -148,9 +195,7 @@ export const weheatConnector: IntegrationConnector = {
     let page = 1
     let totalPages = 1
     do {
-      const resp = await $fetch<any>(`${API_URL}/heat-pumps?page=${page}&pageSize=50`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const resp = await weheatGet<any>(`/heat-pumps?page=${page}&pageSize=50`, token)
       const list = Array.isArray(resp) ? resp : (resp?.data || [])
       for (const hp of list) all.push(hp)
       totalPages = resp?.metadata?.totalPages ?? 1
@@ -175,9 +220,7 @@ export const weheatConnector: IntegrationConnector = {
 
   async linkDevice(credentials, deviceId) {
     const token = await getAccessToken(credentials as WeheatCreds)
-    await $fetch(`${API_URL}/heat-pumps/${deviceId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    await weheatGet(`/heat-pumps/${deviceId}`, token)
     return { success: true, device_id: deviceId }
   },
 
@@ -189,9 +232,7 @@ export const weheatConnector: IntegrationConnector = {
    */
   async getDeviceStatus(credentials, deviceId) {
     const token = await getAccessToken(credentials as WeheatCreds)
-    const log = await $fetch<any>(`${API_URL}/heat-pumps/${deviceId}/logs/latest`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    const log = await weheatGet<any>(`/heat-pumps/${deviceId}/logs/latest`, token)
 
     return {
       state: log?.state !== undefined && log?.state !== null ? String(log.state) : 'unknown',
@@ -210,10 +251,7 @@ export const weheatConnector: IntegrationConnector = {
 
   async getDeviceData(credentials, deviceId, from, to) {
     const token = await getAccessToken(credentials as WeheatCreds)
-    const data = await $fetch<any[]>(
-      `${API_URL}/heat-pumps/${deviceId}/energy?from=${from}&to=${to}`,
-      { headers: { Authorization: `Bearer ${token}` } },
-    )
+    const data = await weheatGet<any[]>(`/heat-pumps/${deviceId}/energy?from=${from}&to=${to}`, token)
 
     return (data || []).map((d: any) => ({
       timestamp: d.timestamp,

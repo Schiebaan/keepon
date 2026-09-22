@@ -158,7 +158,12 @@ export default defineEventHandler(async (event) => {
       .maybeSingle()
 
     if (stuk) {
-      const detail = `De koppeling met ${type} werkt niet meer: geen van de ${v.fout} gekoppelde installaties is uit te lezen. Ga naar Instellingen → Monitoring integraties om opnieuw te verbinden. (${v.laatsteFout})`
+      // Bij een blokkade door de leverancier helpt opnieuw verbinden niet; dan
+      // de echte oorzaak noemen in plaats van een handeling die niets oplost.
+      const geblokkeerd = /blokkeert deze toegang/.test(v.laatsteFout)
+      const detail = geblokkeerd
+        ? `${v.laatsteFout} Dit treft ${v.fout} gekoppelde ${v.fout === 1 ? 'installatie' : 'installaties'}.`
+        : `De koppeling met ${type} werkt niet meer: geen van de ${v.fout} gekoppelde installaties is uit te lezen. Ga naar Instellingen → Monitoring integraties om opnieuw te verbinden. (${v.laatsteFout})`
       if (open) {
         await supabase.from('device_alerts')
           .update({ last_seen_at: nu, detail })

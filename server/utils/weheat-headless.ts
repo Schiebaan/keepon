@@ -10,16 +10,13 @@ import { createHash, randomBytes } from 'crypto'
  * Mirrors the official api.weheat.nl/third_party/api/debugger flow.
  */
 
-const REALM_BASE = 'https://auth.weheat.nl/realms/Weheat/protocol/openid-connect'
-// Weheat's officiële client voor externe partijen. Stond op 'weheat-backend',
-// en dáár kwam de storing vandaan: die client accepteert deze redirect_uri niet
-// meer, dus kregen we een 400-foutpagina zonder inlogformulier terug. De
-// melding "login-formulier niet gevonden" wees dus naar het verkeerde probleem.
-//
-// Deze client-id staat in Weheat's eigen third-party debugger
-// (api.weheat.nl/third_party/api/debugger).
-const CLIENT_ID = 'weheat-third-party-debugger'
-const REDIRECT_URI = 'https://api.weheat.nl/third_party/api/debugger'
+import { WEHEAT_REALM, WEHEAT_CLIENT_ID, WEHEAT_REDIRECT_URI, weheatClientParams } from './weheat-config'
+
+// Client-id, redirect en eventueel secret komen uit weheat-config.ts, zodat een
+// nieuwe Weheat-toegang alleen een .env-wijziging is.
+const REALM_BASE = WEHEAT_REALM
+const CLIENT_ID = WEHEAT_CLIENT_ID
+const REDIRECT_URI = WEHEAT_REDIRECT_URI
 const SCOPE = 'profile email'
 
 class CookieJar {
@@ -134,7 +131,7 @@ export async function loginWeheatHeadless(username: string, password: string): P
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       grant_type: 'authorization_code',
-      client_id: CLIENT_ID,
+      ...weheatClientParams(),
       code,
       redirect_uri: REDIRECT_URI,
       code_verifier: verifier,
@@ -149,5 +146,8 @@ export async function loginWeheatHeadless(username: string, password: string): P
     access_token: tokenResp.access_token,
     refresh_token: tokenResp.refresh_token,
     expires_in: tokenResp.expires_in || 3600,
-  }
+    // 30 dagen bij de third-party-client. Bewaren, zodat we een verlopen
+    // refresh-token niet eerst nog proberen.
+    refresh_expires_in: tokenResp.refresh_expires_in,
+  } as any
 }
