@@ -82,3 +82,27 @@ die niks ontvangen heeft blijft: *"Kijk eens in je spamfolder."*
 - **Dezelfde klant meerdere keren aanmaken.** Als het e-mailadres al bestaat
   krijg je een foutmelding. Gebruik in plaats daarvan de knop *"Stuur
   uitnodiging"* op de bestaande regel om de mail opnieuw te versturen.
+
+## Klaarzetten zonder te versturen
+
+Wil je een lijst klanten eerst controleren voordat ze een mail krijgen, dan kun
+je ze klaarzetten. Ze staan dan onder **Uitnodigingen** met het label
+**Klaargezet**, en hebben nog niets ontvangen.
+
+Versturen doe je daarna in één keer: vink de klanten aan en klik op
+**Verstuur uitnodiging**. Je ziet de voortgang, en als er iets misgaat staat
+precies welke klant het betreft. De rest gaat gewoon door.
+
+Wil je een grote lijst laten klaarzetten, bijvoorbeeld uit je
+projectadministratie? Stuur ons naam, adres, e-mailadres en eventueel het
+serienummer van het apparaat. Met het serienummer kan de installatie later
+automatisch gekoppeld worden.
+
+## Hoe je klant wordt aangesproken
+
+In mails en in het portaal spreken we je klant aan met de voornaam. Staat er
+geen voornaam in — alleen "de Graaf" of "B. van Leeuwen" — dan wordt dat
+"Hoi familie De Graaf". Vul je een bedrijfsnaam of adres in als naam, dan wordt
+het een neutraal "Hallo".
+
+Het netst is dus: **voornaam en achternaam**. Dan staat er gewoon "Hoi Jan".
