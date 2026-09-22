@@ -17,7 +17,7 @@ onMounted(async () => {
 })
 
 const partner = computed(() => state.value?.partner)
-const firstName = computed(() => state.value?.customer?.first_name || 'daar')
+const firstName = computed(() => state.value?.customer?.first_name || '')
 const modules = computed(() => state.value?.proposal?.modules || [])
 const mandateSkipped = computed(() => !!state.value?.mandate_skipped)
 
@@ -87,7 +87,7 @@ const tourCards = computed(() => {
             <AppIcon name="check" :size="44" />
           </div>
           <p class="eyebrow">Klaar voor gebruik</p>
-          <h1 class="title">{{ firstName }}, je portaal staat live!</h1>
+          <h1 class="title">{{ firstName ? `${firstName.charAt(0).toUpperCase()}${firstName.slice(1)}, je portaal staat live!` : 'Je portaal staat live!' }}</h1>
           <p class="subtitle">
             Bedankt voor je akkoord. Vanaf nu krijg je een seintje als je systeem
             aandacht nodig heeft. Je kunt op elk moment terugkomen om alles te zien.

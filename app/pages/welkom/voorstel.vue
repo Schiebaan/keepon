@@ -12,7 +12,9 @@ onMounted(async () => {
 })
 
 const partner = computed(() => state.value?.partner)
-const firstName = computed(() => state.value?.customer?.first_name || 'daar')
+// Leeg als er geen bruikbare naam is (bedrijfsnaam of adres als naam); de
+// zinnen hieronder vallen dan terug op een neutrale vorm.
+const firstName = computed(() => state.value?.customer?.first_name || '')
 const addressShort = computed(() => state.value?.customer?.address_short || null)
 const proposal = computed(() => state.value?.proposal)
 const allModules = computed(() => proposal.value?.modules || [])
@@ -232,9 +234,9 @@ const installLine = computed(() => {
         <!-- HERO                                                            -->
         <!-- ============================================================== -->
         <section class="hero">
-          <p class="eyebrow">Persoonlijk voor {{ firstName }}</p>
+          <p class="eyebrow">Persoonlijk voor {{ firstName || 'jou' }}</p>
           <h1 class="hero-title">
-            Hoi {{ firstName }},<br/>
+            {{ firstName ? `Hoi ${firstName},` : 'Hallo,' }}<br/>
             zo regelen we de service voor jouw installaties.
           </h1>
           <p v-if="addressShort" class="hero-address">
@@ -252,7 +254,7 @@ const installLine = computed(() => {
                 <AppIcon name="check" :size="32" />
               </div>
               <p class="akkoord-eyebrow">Akkoord ontvangen</p>
-              <h1 class="akkoord-title">Bedankt {{ firstName }}.</h1>
+              <h1 class="akkoord-title">{{ firstName ? `Bedankt ${firstName}.` : 'Bedankt.' }}</h1>
               <p class="akkoord-text">
                 Je service is actief vanaf vandaag. Je portaal staat klaar.
               </p>

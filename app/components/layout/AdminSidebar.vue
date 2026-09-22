@@ -5,8 +5,8 @@ const route = useRoute()
 
 const navItems = [
   { label: 'Dashboard', icon: 'dashboard', to: '/admin' },
-  { label: 'Klanten', icon: 'users', to: '/admin/customers' },
   { label: 'Uitnodigingen', icon: 'send', to: '/admin/uitnodigingen' },
+  { label: 'Klanten', icon: 'users', to: '/admin/customers' },
   { label: 'Betalingen', icon: 'credit-card', to: '/admin/payments' },
   { label: 'Service', icon: 'tool', to: '/admin/service' },
   { label: 'Communicatie', icon: 'mail', to: '/admin/communicatie' },

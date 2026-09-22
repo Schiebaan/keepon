@@ -8,6 +8,16 @@ export default defineEventHandler(async (event) => {
 
   const { email, full_name, phone, street, house_number, postal_code, city, modules } = body
 
+  // Standaard gaat de uitnodiging direct uit. Met send_invite: false wordt de
+  // klant alleen klaargezet; versturen gebeurt later vanaf /admin/uitnodigingen.
+  const sendInvite: boolean = body?.send_invite !== false
+
+  // Optioneel serienummer per module, bv. { heat_pump: 'SN-2755-JE97' }. Wordt
+  // bewaard op het product, zodat het apparaat later automatisch aan de juiste
+  // klant gekoppeld kan worden.
+  const serials: Record<string, string> =
+    body?.serials && typeof body.serials === 'object' ? body.serials : {}
+
   // Pricing-flexibility velden — admin kan ze bij uitnodiging al meegeven
   const billing_interval: 'monthly' | 'yearly' =
     body?.billing_interval === 'yearly' ? 'yearly' : 'monthly'
@@ -127,16 +137,23 @@ export default defineEventHandler(async (event) => {
   }
   const selectedModules: string[] = Array.isArray(body.modules) ? body.modules : []
   const productRows = selectedModules
-    .map(m => MODULE_INFO[m])
-    .filter(Boolean)
-    .map(info => ({
-      customer_id: customer.id,
-      partner_id: partnerId,
-      category: info.category,
-      name: info.name,
-      brand: info.brand,
-      model: info.model,
-    }))
+    .filter(m => MODULE_INFO[m])
+    .map(m => {
+      const info = MODULE_INFO[m]
+      const serial = typeof serials[m] === 'string' ? serials[m].trim() : ''
+      return {
+        customer_id: customer.id,
+        partner_id: partnerId,
+        category: info.category,
+        name: info.name,
+        brand: info.brand,
+        model: info.model,
+        // Alleen het kale serienummer. Een gekoppeld apparaat krijgt later
+        // 'weheat:<id>' via link-weheat; een waarde zonder dubbele punt telt
+        // overal als "nog niet gekoppeld".
+        serial_number: serial && !serial.includes(':') ? serial : null,
+      }
+    })
   if (productRows.length) {
     const { error: insertErr } = await supabase.from('customer_products').insert(productRows)
     if (insertErr) console.error('[customers] product insert failed:', insertErr.message)
@@ -185,6 +202,14 @@ export default defineEventHandler(async (event) => {
   }).catch(() => { /* non-fatal */ })
 
   await auditLog(event, 'customer.created', 'customer', customer.id, { email, full_name, partner_id: partnerId, modules: selectedModules })
+
+  if (!sendInvite) {
+    await supabase.from('customers').update({ invite_sent_at: null }).eq('id', customer.id)
+    await auditLog(event, 'customer.invite_prepared', 'customer', customer.id, {
+      email, partner_id: partnerId, customer_id: customer.id,
+    })
+    return { ...customer, invite_sent_at: null }
+  }
 
   // Send welcome email with magic link
   try {
@@ -259,6 +284,7 @@ export default defineEventHandler(async (event) => {
     // Stempel in mailing_batches zodat /admin/uitnodigingen de eerste mail
     // ook ziet (in plaats van "Nooit gemaild" voor net-uitgenodigde klanten).
     if (mailRes.success) {
+      await supabase.from('customers').update({ invite_sent_at: new Date().toISOString() }).eq('id', customer.id)
       await logIndividualInvitation({
         supabase,
         partnerId,

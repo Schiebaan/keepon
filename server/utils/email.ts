@@ -1,3 +1,4 @@
+import { groet, aanspreeknaam } from '~~/shared/utils/aanhef'
 import { senderLabel as buildSenderLabel } from '~~/shared/utils/sender-name'
 import { Resend } from 'resend'
 
@@ -163,7 +164,7 @@ export function buildWelcomeEmail(data: WelcomeEmailData) {
     : ''
 
   const content = `
-    <h1>Hoi ${firstName},</h1>
+    <h1>${escapeHtml(groet(data.customerName))},</h1>
     <p>
       ${partnerName} heeft een service-voorstel voor je klaargezet voor je
       ${data.moduleName ? data.moduleName.toLowerCase() : 'installatie'}.
@@ -211,7 +212,7 @@ export function buildPasswordResetEmail(data: ResetEmailData) {
   const content = `
     <h1>Wachtwoord herstellen</h1>
     <p>
-      Hallo ${firstName}, we hebben een verzoek ontvangen om je wachtwoord te wijzigen.
+      ${escapeHtml(groet(data.customerName, 'Hallo'))}, we hebben een verzoek ontvangen om je wachtwoord te wijzigen.
       Klik op de knop hieronder om een nieuw wachtwoord in te stellen.
     </p>
 
@@ -250,7 +251,7 @@ export function buildActivationConfirmEmail(data: ActivationEmailData) {
   const content = `
     <h1>Je account is actief!</h1>
     <p>
-      Hallo ${firstName}, je account bij ${partnerName} is succesvol geactiveerd.
+      ${escapeHtml(groet(data.customerName, 'Hallo'))}, je account bij ${partnerName} is succesvol geactiveerd.
       Je kunt nu inloggen op je persoonlijke dashboard.
     </p>
 
@@ -301,7 +302,7 @@ export function buildTicketReplyEmail(data: TicketReplyEmailData) {
 
   const content = `
     <h1>${escapeHtml(senderLabel)} heeft gereageerd</h1>
-    <p>Hoi ${firstName}, er is een nieuwe reactie op je servicemelding.</p>
+    <p>${escapeHtml(groet(data.customerName))}, er is een nieuwe reactie op je servicemelding.</p>
 
     <div class="highlight">
       ${refLine}
@@ -367,7 +368,7 @@ export function buildTicketResolvedEmail(data: TicketResolvedEmailData) {
 
   const content = `
     <h1>Je melding is afgehandeld</h1>
-    <p>Hoi ${firstName}, ${escapeHtml(senderLabel)} heeft je servicemelding afgerond.</p>
+    <p>${escapeHtml(groet(data.customerName))}, ${escapeHtml(senderLabel)} heeft je servicemelding afgerond.</p>
 
     <div class="highlight">
       ${refLine}
@@ -539,7 +540,7 @@ export function buildInstallationConnectedEmail(data: InstallationConnectedEmail
   const content = `
     <h1>Je installatie is gekoppeld! 🎉</h1>
     <p>
-      Hoi ${firstName}, ${partnerName} heeft zojuist je ${escapeHtml(data.installationLabel)} gekoppeld
+      ${escapeHtml(groet(data.customerName))}, ${partnerName} heeft zojuist je ${escapeHtml(data.installationLabel)} gekoppeld
       aan het monitoringplatform. Je ziet live gegevens zodra de eerste data binnenkomt (meestal binnen 24 uur).
     </p>
 
@@ -579,7 +580,7 @@ export function buildPasswordChangedEmail(data: PasswordChangedEmailData) {
 
   const content = `
     <h1>Je wachtwoord is gewijzigd</h1>
-    <p>Hoi ${firstName}, we willen je laten weten dat je wachtwoord zojuist is aangepast op je ${partnerName}-account.</p>
+    <p>${escapeHtml(groet(data.customerName))}, we willen je laten weten dat je wachtwoord zojuist is aangepast op je ${partnerName}-account.</p>
 
     <div class="highlight">
       <p class="highlight-label">Tijdstip</p>
@@ -640,7 +641,7 @@ function replacePlaceholders(text: string, data: CustomTemplateData): string {
   const firstName = data.customerName.split(' ')[0]
   const partnerName = data.partner?.name || 'UPsol'
   return text
-    .replace(/\{\{voornaam\}\}/g, escapeHtml(firstName))
+    .replace(/\{\{voornaam\}\}/g, escapeHtml(aanspreeknaam(data.customerName) || 'daar'))
     .replace(/\{\{naam\}\}/g, escapeHtml(data.customerName))
     .replace(/\{\{email\}\}/g, escapeHtml(data.customerEmail || ''))
     .replace(/\{\{bedrijfsnaam\}\}/g, escapeHtml(partnerName))
@@ -721,7 +722,7 @@ export function buildMandateMail(data: MandateMailData) {
 
   if (data.kind === 'confirm') {
     h1 = 'Bedankt voor je akkoord!'
-    intro = `Hoi ${firstName}, fijn dat je hebt gekozen voor ${partnerName}. Je servicecontract is bevestigd.`
+    intro = `${escapeHtml(groet(data.customerName))}, fijn dat je hebt gekozen voor ${partnerName}. Je servicecontract is bevestigd.`
     body = `
       <p>Eén stap te gaan: zet de automatische incasso aan. Dat is een korte stap waarin we
       via je IBAN het maandelijkse servicebedrag${data.totalMonthlyEuros ? ` van € ${escapeHtml(data.totalMonthlyEuros)}` : ''}
@@ -731,7 +732,7 @@ export function buildMandateMail(data: MandateMailData) {
     postscript = `Eenmaal afgegeven hoef je hier niets meer aan te doen. Bedankt!`
   } else if (data.kind === 'day3') {
     h1 = 'Vergeet je incasso niet'
-    intro = `Hoi ${firstName}, klein duwtje: je incasso voor ${partnerName} is nog niet afgegeven.`
+    intro = `${escapeHtml(groet(data.customerName))}, klein duwtje: je incasso voor ${partnerName} is nog niet afgegeven.`
     body = `
       <p>Zonder automatische incasso kunnen we je servicecontract voor ${escapeHtml(modulesLine)}
       nog niet volledig activeren. Het duurt ongeveer een halve minuut:
@@ -742,7 +743,7 @@ export function buildMandateMail(data: MandateMailData) {
   } else {
     // day10
     h1 = 'Laatste herinnering — incasso nog niet afgegeven'
-    intro = `Hoi ${firstName}, je servicecontract bij ${partnerName} loopt al ruim een week, maar er is nog steeds geen incasso ingesteld.`
+    intro = `${escapeHtml(groet(data.customerName))}, je servicecontract bij ${partnerName} loopt al ruim een week, maar er is nog steeds geen incasso ingesteld.`
     body = `
       <p><strong>Let op:</strong> zonder een actieve automatische incasso kunnen wij geen
       service leveren op ${escapeHtml(modulesLine)}. Geef nu je IBAN af zodat we je

@@ -262,6 +262,47 @@ async function sendOneInvite(c: Customer) {
 // auth-account). Alleen bedoeld voor klanten die nog geen akkoord hebben
 // gegeven — die staan per definitie op deze pagina.
 const deletingId = ref<string | null>(null)
+// Selectie in één keer uitnodigen. Handig voor een klaargezette lijst: die
+// maak je aan zonder mail, controleert hem, en verstuurt dan alles tegelijk.
+// Eén voor één op de server, zodat een fout halverwege niet de rest blokkeert
+// en je precies ziet wie wel en niet gelukt is.
+const bulkSending = ref(false)
+const bulkProgress = ref<{ done: number; total: number; failed: string[] } | null>(null)
+
+async function sendSelected() {
+  if (!selected.value.size || bulkSending.value) return
+  const lijst = selectedCustomers.value
+  const namen = lijst.slice(0, 5).map(c => c.full_name || c.email)
+  const extra = lijst.length > 5 ? `\n…en nog ${lijst.length - 5}` : ''
+  const ok = await confirm({
+    title: `${lijst.length} ${lijst.length === 1 ? 'uitnodiging' : 'uitnodigingen'} versturen?`,
+    message: `${namen.join('\n')}${extra}\n\nIedereen krijgt nu een mail met een persoonlijke inloglink, 30 dagen geldig.`,
+    confirmLabel: 'Versturen',
+  })
+  if (!ok) return
+
+  bulkSending.value = true
+  bulkProgress.value = { done: 0, total: lijst.length, failed: [] }
+  const supabase = useSupabaseClient()
+  const { data: { session } } = await supabase.auth.getSession()
+  const headers = { Authorization: `Bearer ${session?.access_token}` }
+
+  for (const c of lijst) {
+    try {
+      await $fetch(`/api/customers/${c.id}/send-welcome`, { method: 'POST', headers })
+    } catch {
+      bulkProgress.value.failed.push(c.full_name || c.email)
+    }
+    bulkProgress.value.done++
+  }
+
+  bulkSending.value = false
+  selected.value = new Set()
+  await refreshCustomers(currentFilters.value)
+  // Resultaat even laten staan; bij fouten langer, zodat je de namen kunt lezen.
+  setTimeout(() => { bulkProgress.value = null }, bulkProgress.value.failed.length ? 15000 : 5000)
+}
+
 const bulkDeleting = ref(false)
 const deleteError = ref('')
 
@@ -402,6 +443,15 @@ function relativeDays(iso: string | null | undefined): string {
     <div class="mb-6 flex items-start justify-between gap-4">
       <div>
         <h1 class="text-2xl font-bold text-gray-900">Uitnodigingen</h1>
+        <p
+          v-if="bulkProgress && !bulkSending"
+          class="mt-2 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium"
+          :class="bulkProgress.failed.length ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'"
+        >
+          <AppIcon :name="bulkProgress.failed.length ? 'alert-circle' : 'check-circle'" :size="12" />
+          <template v-if="!bulkProgress.failed.length">{{ bulkProgress.total }} uitnodigingen verstuurd</template>
+          <template v-else>{{ bulkProgress.total - bulkProgress.failed.length }} verstuurd, mislukt: {{ bulkProgress.failed.join(', ') }}</template>
+        </p>
         <p class="mt-1 text-sm text-gray-500">
           Klanten die nog geen akkoord hebben gegeven. Nodig één klant tegelijk uit, of exporteer een batch naar Mailchimp.
         </p>
@@ -422,6 +472,20 @@ function relativeDays(iso: string | null | undefined): string {
           <AppIcon v-else name="trash" :size="14" />
           {{ bulkDeleting ? 'Verwijderen...' : 'Verwijder' }}
           <span class="rounded-full bg-red-100 px-1.5 py-0.5 text-xs">{{ selected.size }}</span>
+        </button>
+        <button
+          v-if="selected.size"
+          class="inline-flex items-center gap-1.5 rounded-xl bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+          :disabled="bulkSending || bulkDeleting"
+          @click="sendSelected"
+        >
+          <svg v-if="bulkSending" class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <AppIcon v-else name="send" :size="14" />
+          {{ bulkSending && bulkProgress ? `Versturen ${bulkProgress.done}/${bulkProgress.total}` : 'Verstuur uitnodiging' }}
+          <span v-if="!bulkSending" class="rounded-full bg-white/20 px-1.5 py-0.5 text-xs">{{ selected.size }}</span>
         </button>
         <button
           class="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
@@ -550,6 +614,10 @@ function relativeDays(iso: string | null | undefined): string {
                   <span v-if="c.latest_batch" class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700" :title="c.latest_batch.name">
                     <AppIcon name="clock" :size="10" />
                     {{ relativeDays(c.latest_batch.created_at) }}
+                  </span>
+                  <span v-else-if="!c.invite_sent_at" class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700" title="Aangemaakt zonder mail. Klaar om te versturen.">
+                    <AppIcon name="send" :size="10" />
+                    Klaargezet
                   </span>
                   <span v-else class="text-[11px] text-gray-400">Nooit gemaild</span>
                 </td>

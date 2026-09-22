@@ -112,6 +112,12 @@ export default defineEventHandler(async (event) => {
     // Geen replyTo — welkomstmail wijst direct naar portaal-login.
   })
 
+  // Verzendmoment vastleggen, zodat /admin/uitnodigingen weet dat deze klant
+  // niet meer bij "nog niet verstuurd" hoort.
+  if ((result as any)?.success !== false) {
+    await supabase.from('customers').update({ invite_sent_at: new Date().toISOString() }).eq('id', customer.id)
+  }
+
   await auditLog(event, 'email.welcome_resent', 'customer', customer.id, {
     to: customer.email,
     success: result.success,

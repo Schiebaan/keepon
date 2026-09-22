@@ -1,3 +1,4 @@
+import { aanspreeknaam } from '~~/shared/utils/aanhef'
 import { getServiceRoleClient } from '~~/server/utils/supabase'
 
 /**
@@ -135,7 +136,8 @@ export default defineEventHandler(async (event) => {
     mandate_skipped: !!onboarding.mandate_skipped,
     customer: {
       full_name: customer.full_name,
-      first_name: (customer.full_name || customer.email || '').split(' ')[0],
+      // Voornaam, "familie De Graaf", of leeg als er geen bruikbare naam is.
+      first_name: aanspreeknaam(customer.full_name) || '',
       email: customer.email,
       address_short: addressShort,
       street: customer.street,
