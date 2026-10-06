@@ -128,7 +128,15 @@ export default defineEventHandler(async (event) => {
     ? `${customer.street} ${customer.house_number}`
     : null
 
+  // Kan de klant nu al een machtiging afgeven? Zolang Mollie Direct Debit niet
+  // heeft goedgekeurd niet: dan weigert Mollie ook de iDEAL-machtiging ('does
+  // not accept recurring payments'). Het scherm legt dat dan uit in plaats van
+  // een foutmelding te tonen.
+  const { isDirectDebitEnabled } = await import('~~/server/utils/mollie')
+  const incassoAvailable = await isDirectDebitEnabled()
+
   return {
+    incasso_available: incassoAvailable,
     step: onboarding.step || 'hero',
     accepted_at: onboarding.accepted_at,
     accepted_modules: Array.isArray(onboarding.accepted_modules) ? onboarding.accepted_modules : null,

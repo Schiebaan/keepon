@@ -119,3 +119,17 @@ factuur allemaal tegelijk stuklopen.
 
 Je klant kan de stap gewoon overslaan en later afronden. De herinneringsmails
 lopen door.
+
+## Wie staat er op het bankafschrift?
+
+De incasso loopt via het Mollie-account van **Sundata B.V.** Die naam ziet je klant
+op het incassoscherm én op zijn bankafschrift, zodat hij de afschrijving herkent.
+
+## "De machtiging volgt later"
+
+Zolang Mollie de automatische incasso voor ons account nog niet heeft
+goedgekeurd, kan een klant wel akkoord geven maar nog geen machtiging afgeven.
+Hij ziet dan *"De machtiging volgt later"* en gaat door naar zijn portaal.
+Er wordt niets afgeschreven, en hij krijgt in die periode ook geen
+herinneringsmails. Zodra de incasso actief is, lopen de herinneringen weer en
+kan iedereen die nog geen machtiging heeft die alsnog afgeven.

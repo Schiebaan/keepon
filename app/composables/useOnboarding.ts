@@ -16,6 +16,8 @@ export interface OnboardingProduct {
 }
 
 export interface OnboardingState {
+  /** false zolang Mollie Direct Debit nog niet heeft goedgekeurd */
+  incasso_available?: boolean
   step: OnboardingStep
   accepted_at: string | null
   accepted_modules: string[] | null

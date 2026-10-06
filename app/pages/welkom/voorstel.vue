@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { INCASSANT } from '~~/shared/utils/incassant'
 definePageMeta({ layout: false, middleware: ['auth'] })
 
 const { state, isLoading, load, acceptProposal, formatPrice, targetRouteForStep } = useOnboarding()
@@ -481,7 +482,7 @@ const installLine = computed(() => {
         </div>
 
         <p class="legal">
-          Service door <strong>{{ partner?.name }}</strong>. Contractuele afhandeling via UPsol B.V.
+          Service door <strong>{{ partner?.name }}</strong>. Contractuele afhandeling en incasso via {{ INCASSANT }}.
         </p>
       </template>
     </div>

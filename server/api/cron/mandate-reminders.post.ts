@@ -52,6 +52,14 @@ export default defineEventHandler(async (event) => {
   const now = Date.now()
   const stats = { checked: 0, day3_sent: 0, day10_sent: 0, skipped: 0, failed: 0 }
 
+  // Zolang Mollie Direct Debit niet heeft goedgekeurd kan niemand een machtiging
+  // afgeven. Een herinnering voor iets wat niet kan levert alleen ergernis op.
+  // De herinneringen lopen vanzelf weer zodra het actief is.
+  const { isDirectDebitEnabled } = await import('~~/server/utils/mollie')
+  if (!(await isDirectDebitEnabled())) {
+    return { skipped: true, reason: 'Direct Debit nog niet actief bij Mollie', sent: 0 }
+  }
+
   for (const c of candidates || []) {
     stats.checked += 1
     const acceptedAt = c.accepted_at ? new Date(c.accepted_at).getTime() : null

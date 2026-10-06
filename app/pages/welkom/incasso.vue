@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { INCASSANT } from '~~/shared/utils/incassant'
 definePageMeta({ layout: false, middleware: ['auth'] })
 
 const { state, isLoading, load, submitMandate, formatPrice, targetRouteForStep } = useOnboarding()
@@ -175,10 +176,28 @@ async function handleSubmit(skip = false) {
 
           <p v-if="submitError" class="error" role="alert" aria-live="assertive">{{ submitError }}</p>
 
+          <!-- Nog niet mogelijk: Mollie moet Direct Debit eerst goedkeuren. Dan
+               geen knoppen die op een fout uitlopen, maar uitleg en door. -->
+          <template v-if="state?.incasso_available === false">
+            <div class="pending-note">
+              <p class="pending-title">De machtiging volgt later</p>
+              <p class="pending-text">
+                We ronden de automatische incasso nog af met onze betaalpartner. Zodra het
+                kan krijg je van ons een mail met een link om de machtiging in een minuut
+                af te geven. Tot die tijd wordt er niets afgeschreven.
+              </p>
+            </div>
+            <button type="button" class="btn-primary" :disabled="submitting" @click="handleSubmit(true)">
+              <span v-if="submitting" class="spinner" />
+              <AppIcon v-else name="check" :size="16" />
+              Naar mijn portaal
+            </button>
+          </template>
+
           <!-- Standaardroute: iDEAL. De klant bevestigt bij zijn eigen bank,
                waardoor het rekeningnummer geverifieerd is in plaats van
                ingetypt. -->
-          <template v-if="!showManual">
+          <template v-else-if="!showManual">
             <button type="button" class="btn-primary" :disabled="startingIdeal" @click="startIdeal">
               <span v-if="startingIdeal" class="spinner" />
               <AppIcon v-else name="shield" :size="16" />
@@ -250,7 +269,7 @@ async function handleSubmit(skip = false) {
         </div>
 
         <p class="explainer">
-          Het mandaat geef je af aan <strong>UPsol B.V.</strong> namens je servicecontract met {{ partner?.name }}.
+          Het mandaat geef je af aan <strong>{{ INCASSANT }}</strong> namens je servicecontract met {{ partner?.name }}. Die naam zie je ook op je bankafschrift.
         </p>
       </template>
     </div>
@@ -320,6 +339,9 @@ async function handleSubmit(skip = false) {
 }
 .ideal-steps strong { color: #374151; font-weight: 600; }
 
+.pending-note { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 0.75rem; padding: 0.875rem 1rem; margin-bottom: 0.5rem; }
+.pending-title { font-weight: 600; font-size: 0.9rem; color: #0c4a6e; margin: 0 0 0.25rem; }
+.pending-text { font-size: 0.85rem; color: #0369a1; margin: 0; line-height: 1.5; }
 .manual-note { display: flex; align-items: flex-start; gap: 0.5rem; font-size: 0.75rem; color: #92400e; background: #fffbeb; border-radius: 0.5rem; padding: 0.5rem 0.625rem; margin: 0; line-height: 1.4; }
 .manual-note svg { flex-shrink: 0; margin-top: 0.0625rem; }
 
