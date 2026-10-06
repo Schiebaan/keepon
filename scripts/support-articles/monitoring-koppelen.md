@@ -34,6 +34,30 @@ opnieuw op verbinden.
 Vul je Easee-accountgegevens in — hetzelfde account waarmee je in de Easee-app
 inlogt.
 
+## Zonnepanelen: light wordt monitored bij akkoord
+
+Staan de installaties al bij Sundata als **light** — aangemaakt, met adres en
+meter, maar zonder monitoring — dan hoef je niets aan te maken. Zodra de klant
+in zijn portaal akkoord geeft, zetten wij die installatie automatisch op
+monitored, met de datum van het akkoord. Sundata haalt daarna zelf de historie
+op vanaf de startdatum van de meter.
+
+Daarvoor moet wel vastliggen welke installatie bij welk e-mailadres hoort. Dat
+lezen we in uit de lijst die je aanlevert; vraag ons die te importeren.
+
+Twee dingen om te weten:
+
+**Activeren kan niet terug.** Sundata staat niet toe om monitoring weer uit te
+zetten. Daarom doen we het uitsluitend na een echt akkoord, nooit vooruit en
+nooit als test.
+
+**Heeft een klant meer installaties, dan gaan ze allemaal aan.** Dat volgt uit
+de lijst.
+
+Gaat het activeren onverhoopt mis, dan blijft het akkoord gewoon staan en kan
+monitoring later alsnog aan. Je ziet het terug in de recente activiteit op je
+dashboard.
+
 ## Stap 2: een apparaat aan een klant koppelen
 
 De account-koppeling geeft ons toegang tot **al** je apparaten. Vervolgens moet

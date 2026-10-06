@@ -99,6 +99,44 @@ export default defineEventHandler(async (event) => {
     ip,
   })
 
+  // --- Sundata: monitoring aanzetten ------------------------------------
+  //
+  // De zonne-installaties van deze partner staan bij Sundata als "light": wel
+  // aangemaakt, maar zonder monitored_since, dus Sundata haalt nog geen data op.
+  // Dat zetten we hier aan, op de datum van het akkoord.
+  //
+  // Alleen als de klant zonnepanelen heeft geaccepteerd, en uitsluitend ná dit
+  // akkoord: activeren is bij Sundata onomkeerbaar (4033
+  // plant_turn_off_monitored_since_not_allowed).
+  //
+  // Mislukt het, dan blijft het akkoord staan. Monitoring kan daarna alsnog aan;
+  // een akkoord laten klappen omdat een koppeling hikte is veel erger.
+  if (accepted_modules.includes('solar')) {
+    try {
+      const { activatePlantsForCustomer } = await import('~~/server/utils/sundata-activate')
+      const resultaten = await activatePlantsForCustomer(
+        event, customer.partner_id,
+        { id: customer.id, email: customer.email },
+        acceptedAt.slice(0, 10),
+      )
+      if (resultaten.length) {
+        await auditLog(event, 'sundata.monitoring_activated', 'customer', customer.id, {
+          partner_id: customer.partner_id,
+          customer_id: customer.id,
+          plants: resultaten.map(r => ({ plant: r.plantId, status: r.status, error: r.error })),
+        })
+        const mislukt = resultaten.filter(r => r.status === 'failed')
+        if (mislukt.length) {
+          console.error('[accept] Sundata-activering mislukt voor', customer.email,
+            mislukt.map(r => `${r.plantId}: ${r.error}`).join(' | '))
+        }
+      }
+    } catch (e: any) {
+      console.error('[accept] Sundata-activering overgeslagen:', e?.message)
+    }
+  }
+
+
   // Direct na akkoord: bevestigingsmail met incasso-CTA (kind='confirm').
   // Wordt door sendMandateReminder zelf overgeslagen als het mandaat al actief
   // is of als deze mail al ooit verstuurd is. Niet awaiten om de response
