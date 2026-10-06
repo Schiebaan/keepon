@@ -1,12 +1,14 @@
 /**
- * De partij die de incasso uitvoert en op het bankafschrift van de klant staat.
+ * De partij die de incasso uitvoert.
  *
- * Het Mollie-account staat op naam van Sundata B.V.; UPsol B.V. bestaat (nog)
- * niet. De klant moet op het incassoscherm en in het voorstel dezelfde naam
- * lezen als die straks op zijn afschrift staat. Een naam die hij nergens
- * herkent is de snelste weg naar een terugboeking.
+ * UPsol is een product van Sundata B.V.; een aparte UPsol B.V. bestaat (nog)
+ * niet. In teksten heet de incassant daarom "UPsol van Sundata B.V.". Op het
+ * bankafschrift staat de naam van het Mollie-profiel, en dat is Sundata B.V.
+ * Beide namen moeten de klant bekend voorkomen: een afschrijving van een naam
+ * die hij nergens herkent is de snelste weg naar een terugboeking.
  *
- * Gaat de incasso later via een ander Mollie-profiel, verander het dan hier —
- * en controleer de servicevoorwaarden en de partnerovereenkomst mee.
+ * Verandert de juridische opzet, pas het dan hier aan — en controleer de
+ * servicevoorwaarden van de partners en de partnerovereenkomst mee.
  */
-export const INCASSANT = 'Sundata B.V.'
+export const INCASSANT = 'UPsol van Sundata B.V.'
+export const AFSCHRIFT_NAAM = 'Sundata B.V.'

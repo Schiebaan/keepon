@@ -12,7 +12,7 @@ UPsol werkt volgens het **booking-model**, zoals Booking.com of Airbnb dat
 doen. Concreet:
 
 - De klant sluit een servicecontract met **jou**
-- UPsol int het maandbedrag namens jou via Mollie
+- UPsol van Sundata B.V. int het maandbedrag namens jou via Mollie
 - Wij dragen de omzet aan jou af
 
 Dat betekent dat jij géén eigen Mollie-account nodig hebt en niet hoeft te
@@ -122,8 +122,10 @@ lopen door.
 
 ## Wie staat er op het bankafschrift?
 
-De incasso loopt via het Mollie-account van **Sundata B.V.** Die naam ziet je klant
-op het incassoscherm én op zijn bankafschrift, zodat hij de afschrijving herkent.
+De incasso loopt via **UPsol van Sundata B.V.** Zo staat het op het incassoscherm
+en in de servicevoorwaarden. Op het bankafschrift van je klant staat **Sundata B.V.**,
+de naam van het Mollie-account. Het incassoscherm noemt die naam ook, zodat je
+klant de afschrijving herkent.
 
 ## "De machtiging volgt later"
 

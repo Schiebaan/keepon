@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { INCASSANT } from '~~/shared/utils/incassant'
+import { INCASSANT, AFSCHRIFT_NAAM } from '~~/shared/utils/incassant'
 definePageMeta({ layout: false, middleware: ['auth'] })
 
 const { state, isLoading, load, submitMandate, formatPrice, targetRouteForStep } = useOnboarding()
@@ -269,7 +269,7 @@ async function handleSubmit(skip = false) {
         </div>
 
         <p class="explainer">
-          Het mandaat geef je af aan <strong>{{ INCASSANT }}</strong> namens je servicecontract met {{ partner?.name }}. Die naam zie je ook op je bankafschrift.
+          Het mandaat geef je af aan <strong>{{ INCASSANT }}</strong> namens je servicecontract met {{ partner?.name }}. Op je bankafschrift staat <strong>{{ AFSCHRIFT_NAAM }}</strong>.
         </p>
       </template>
     </div>
