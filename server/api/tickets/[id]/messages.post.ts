@@ -1,4 +1,5 @@
 import { getServiceRoleClient } from '~~/server/utils/supabase'
+import { resolvePartnerId, assertCustomerInPartner } from '~~/server/utils/partner-scope'
 import { appendMessage, parseMessages } from '~~/server/utils/ticket-messages'
 import { sendEmail, buildTicketReplyEmail } from '~~/server/utils/email'
 import { resolveAdminDisplayName } from '~~/server/utils/admin-name'
@@ -19,12 +20,16 @@ export default defineEventHandler(async (event) => {
   if (text.length > 10000) throw createError({ statusCode: 400, message: 'Bericht is te lang (max 10.000 tekens)' })
 
   const supabase = getServiceRoleClient(event)
+  // Alleen tickets van de eigen partner. Zonder dit kon elke installateur in
+  // andermans ticket reageren en de inhoud ervan terugkrijgen.
+  const partnerId = await resolvePartnerId(event, supabase, user.id)
 
   // Fetch current ticket
   const { data: current, error: fetchErr } = await supabase
     .from('service_tickets')
     .select('id, subject, status, response, partner_id, customer_id')
     .eq('id', ticketId)
+    .eq('partner_id', partnerId)
     .single()
   if (fetchErr || !current) throw createError({ statusCode: 404, message: 'Ticket niet gevonden' })
 

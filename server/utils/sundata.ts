@@ -109,7 +109,7 @@ registerConnector(sundataConnector)
 // ----------------------------------------------------------------------------
 
 /** Resolve partner id from tenant subdomain > user role > platform_admin fallback. */
-export async function resolvePartnerId(event: H3Event, userId: string): Promise<string> {
+export async function resolveSundataPartnerId(event: H3Event, userId: string): Promise<string> {
   const supabase = getServiceRoleClient(event)
   const tenant = (event.context as any).tenant
   if (tenant?.id) return tenant.id

@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
   const { data: creds } = await supabase
     .from('integration_credentials')
     .select('credentials')
-    .eq('partner_id', role?.partner_id)
+    .eq('partner_id', (event.context as any).tenant?.id || role?.partner_id)
     .eq('integration_type', 'sundata')
     .eq('is_active', true)
     .single()

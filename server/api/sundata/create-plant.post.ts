@@ -1,6 +1,6 @@
 import {
   SUNDATA_BASE_URL,
-  resolvePartnerId,
+  resolveSundataPartnerId,
   sundataSession,
   parseSundataError,
   findExistingPlantByName,
@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'customer_id en plant_name zijn verplicht' })
   }
 
-  const partnerId = await resolvePartnerId(event, user.id)
+  const partnerId = await resolveSundataPartnerId(event, user.id)
   const { headers, companyId } = await sundataSession(event, partnerId)
 
   // Look up address

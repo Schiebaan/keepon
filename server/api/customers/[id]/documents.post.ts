@@ -1,4 +1,5 @@
 import { getServiceRoleClient } from '~~/server/utils/supabase'
+import { resolvePartnerId, assertCustomerInPartner } from '~~/server/utils/partner-scope'
 
 export default defineEventHandler(async (event) => {
   const { user } = await requireRole(event, 'partner_admin')
@@ -25,7 +26,7 @@ export default defineEventHandler(async (event) => {
     if (part.name === 'name') name = part.data.toString()
     else if (part.name === 'category') category = part.data.toString()
     else if (part.name === 'notes') notes = part.data.toString()
-    else if (part.name === 'partner_id') partnerId = part.data.toString()
+    // partner_id uit het formulier wordt genegeerd; zie hieronder
     else if (part.name === 'file' && part.filename) {
       file = { filename: part.filename, data: part.data, type: part.type || 'application/octet-stream' }
     }
@@ -36,6 +37,11 @@ export default defineEventHandler(async (event) => {
   }
 
   const supabase = getServiceRoleClient(event)
+  // De partner kwam uit het formulier en de klant werd niet gecontroleerd. Zo
+  // kon je documenten uploaden naar de klant van een andere installateur, in
+  // diens map in de opslag.
+  partnerId = await resolvePartnerId(event, supabase, user.id)
+  await assertCustomerInPartner(supabase, customerId, partnerId)
 
   // Upload file to Supabase Storage if provided
   let filePath = ''

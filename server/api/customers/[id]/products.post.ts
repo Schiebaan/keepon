@@ -1,8 +1,10 @@
 import { getServiceRoleClient } from '~~/server/utils/supabase'
+import { resolvePartnerId, assertCustomerInPartner } from '~~/server/utils/partner-scope'
 
 export default defineEventHandler(async (event) => {
-  await requireRole(event, 'partner_admin')
+  const { user } = await requireRole(event, 'partner_admin')
   const customerId = getRouterParam(event, 'id')
+  if (!customerId) throw createError({ statusCode: 400, message: 'Klant-id ontbreekt' })
 
   const body = await readBody(event)
   const { name, brand, model, category, serial_number, installation_date, notes, partner_id } = body
@@ -12,11 +14,15 @@ export default defineEventHandler(async (event) => {
   }
 
   const supabase = getServiceRoleClient(event)
+  // partner_id kwam uit het verzoek en de klant werd niet gecontroleerd: zo kon
+  // je een product bij een klant van een andere installateur zetten.
+  const partnerId = await resolvePartnerId(event, supabase, user.id)
+  await assertCustomerInPartner(supabase, customerId, partnerId)
   const { data, error } = await supabase
     .from('customer_products')
     .insert({
       customer_id: customerId,
-      partner_id: partner_id,
+      partner_id: partnerId,
       name,
       brand: brand || null,
       model: model || null,

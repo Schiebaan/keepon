@@ -1,8 +1,9 @@
+import { resolvePartnerId } from '~~/server/utils/partner-scope'
 import { sendEmail, buildFromCustomTemplate } from '~~/server/utils/email'
 import { getServiceRoleClient } from '~~/server/utils/supabase'
 
 export default defineEventHandler(async (event) => {
-  await requireRole(event, 'partner_admin')
+  const { user } = await requireRole(event, 'partner_admin')
 
   const body = await readBody(event)
   const { customerEmail, customerName, moduleName, message, partnerId } = body
@@ -13,6 +14,13 @@ export default defineEventHandler(async (event) => {
 
   const supabase = getServiceRoleClient(event)
 
+  // Alleen in de eigen huisstijl mailen. partnerId kwam uit het verzoek, dus
+  // elke installateur kon mail versturen namens een andere installateur.
+  const supabaseScope = getServiceRoleClient(event)
+  const eigenPartner = await resolvePartnerId(event, supabaseScope, user.id)
+  if (partnerId && partnerId !== eigenPartner) {
+    throw createError({ statusCode: 403, message: 'Geen toegang tot deze partner' })
+  }
   let partner = null
   if (partnerId) {
     const { data } = await supabase

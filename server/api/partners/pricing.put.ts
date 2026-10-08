@@ -1,8 +1,12 @@
 import { getServiceRoleClient } from '~~/server/utils/supabase'
+import { resolvePartnerId, assertCustomerInPartner } from '~~/server/utils/partner-scope'
 
 export default defineEventHandler(async (event) => {
-  await requireRole(event, 'partner_admin')
+  const { user } = await requireRole(event, 'partner_admin')
   const supabase = getServiceRoleClient(event)
+  // Alleen de eigen moduleprijzen. Werkte op id alleen: elke installateur kon
+  // de prijzen van een andere installateur aanpassen.
+  const partnerId = await resolvePartnerId(event, supabase, user.id)
   const body = await readBody(event)
 
   const { id, price_monthly, price_yearly, is_enabled, min_contract_months } = body
@@ -18,9 +22,10 @@ export default defineEventHandler(async (event) => {
     .from('partner_module_configs')
     .update(updates)
     .eq('id', id)
+    .eq('partner_id', partnerId)
     .select()
     .single()
 
-  if (error) throw createError({ statusCode: 500, message: error.message })
+  if (error || !data) throw createError({ statusCode: 404, message: 'Module niet gevonden' })
   return data
 })

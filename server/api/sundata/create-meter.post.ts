@@ -1,6 +1,6 @@
 import {
   SUNDATA_BASE_URL,
-  resolvePartnerId,
+  resolveSundataPartnerId,
   sundataSession,
   parseSundataError,
 } from '~~/server/utils/sundata'
@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const partnerId = await resolvePartnerId(event, user.id)
+  const partnerId = await resolveSundataPartnerId(event, user.id)
   const { headers, companyId } = await sundataSession(event, partnerId)
 
   // Find driver account (to get the driver_account_name)
