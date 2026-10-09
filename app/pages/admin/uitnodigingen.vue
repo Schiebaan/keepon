@@ -118,6 +118,53 @@ async function loadBatches() {
 }
 onMounted(loadBatches)
 
+// --- Afleverstatus uit Resend ---
+// Per e-mailadres de laatste gebeurtenis van de laatste mail: afgeleverd,
+// geopend, geweigerd. De server haalt die zelf op bij Resend.
+interface MailStatus { last_event: string | null; sent_at: string; subject: string | null }
+const mailStatus = ref<Record<string, MailStatus>>({})
+
+async function loadMailStatus() {
+  try {
+    const supabase = useSupabaseClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    const headers = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined
+    mailStatus.value = await $fetch<Record<string, MailStatus>>('/api/partners/email-status', { headers })
+  } catch { /* status is extra info; de lijst werkt ook zonder */ }
+}
+onMounted(loadMailStatus)
+
+const MAIL_EVENT: Record<string, { label: string; cls: string; uitleg: string }> = {
+  sent:             { label: 'Verstuurd',   cls: 'bg-gray-100 text-gray-600',     uitleg: 'Verstuurd, nog geen bevestiging van de ontvangende server.' },
+  queued:           { label: 'Verstuurd',   cls: 'bg-gray-100 text-gray-600',     uitleg: 'In de wachtrij bij de mailserver.' },
+  delivery_delayed: { label: 'Vertraagd',   cls: 'bg-amber-50 text-amber-700',    uitleg: 'De ontvangende server neemt de mail (nog) niet aan. Er wordt opnieuw geprobeerd.' },
+  delivered:        { label: 'Afgeleverd',  cls: 'bg-green-50 text-green-700',    uitleg: 'Aangekomen in de mailbox van de klant.' },
+  opened:           { label: 'Geopend',     cls: 'bg-emerald-100 text-emerald-800', uitleg: 'De klant heeft de mail geopend.' },
+  clicked:          { label: 'Geklikt',     cls: 'bg-emerald-100 text-emerald-800', uitleg: 'De klant heeft op de link in de mail geklikt.' },
+  bounced:          { label: 'Geweigerd',   cls: 'bg-red-50 text-red-700',        uitleg: 'Het adres bestaat niet of weigert mail. Controleer het e-mailadres.' },
+  complained:       { label: 'Als spam gemeld', cls: 'bg-red-50 text-red-700',    uitleg: 'De klant heeft de mail als spam gemarkeerd.' },
+  failed:           { label: 'Mislukt',     cls: 'bg-red-50 text-red-700',        uitleg: 'Versturen is mislukt.' },
+}
+function mailInfo(email: string | null | undefined) {
+  const st = email ? mailStatus.value[email.toLowerCase()] : undefined
+  if (!st?.last_event) return null
+  const ev = MAIL_EVENT[st.last_event] || { label: st.last_event, cls: 'bg-gray-100 text-gray-600', uitleg: '' }
+  return { ...ev, title: `${ev.uitleg}\n${st.subject || ''} · ${new Date(st.sent_at).toLocaleString('nl-NL')}` }
+}
+const mailSamenvatting = computed(() => {
+  const tel: Record<string, number> = {}
+  for (const c of pending.value) {
+    const st = c.email ? mailStatus.value[c.email.toLowerCase()] : undefined
+    if (!st?.last_event) continue
+    const k = ['opened', 'clicked'].includes(st.last_event) ? 'geopend'
+      : ['bounced', 'complained', 'failed'].includes(st.last_event) ? 'geweigerd'
+      : st.last_event === 'delivered' ? 'afgeleverd'
+      : st.last_event === 'delivery_delayed' ? 'vertraagd' : 'verstuurd'
+    tel[k] = (tel[k] || 0) + 1
+  }
+  return tel
+})
+
 // --- Create-batch modal ---
 const showCreate = ref(false)
 const creating = ref(false)
@@ -248,6 +295,8 @@ async function sendOneInvite(c: Customer) {
       { method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` } },
     )
     sendResult.value = { id: c.id, type: 'success', text: `Uitnodiging verstuurd naar ${res.to}` }
+    // Resend kent de afleverstatus pas na een paar seconden; de server synct hooguit eens per minuut.
+    setTimeout(loadMailStatus, 65_000)
     setTimeout(() => { if (sendResult.value?.id === c.id) sendResult.value = null }, 4000)
   } catch (e: any) {
     sendResult.value = { id: c.id, type: 'error', text: e?.data?.message || e?.message || 'Versturen mislukt' }
@@ -561,6 +610,13 @@ function relativeDays(iso: string | null | undefined): string {
           </button>
         </div>
 
+        <div v-if="Object.keys(mailSamenvatting).length" class="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500" title="Laatste mail per klant in deze lijst, volgens Resend">
+          <span v-if="mailSamenvatting.afgeleverd"><span class="font-semibold text-green-700">{{ mailSamenvatting.afgeleverd }}</span> afgeleverd</span>
+          <span v-if="mailSamenvatting.geopend"><span class="font-semibold text-emerald-700">{{ mailSamenvatting.geopend }}</span> geopend</span>
+          <span v-if="mailSamenvatting.vertraagd"><span class="font-semibold text-amber-700">{{ mailSamenvatting.vertraagd }}</span> vertraagd</span>
+          <span v-if="mailSamenvatting.geweigerd"><span class="font-semibold text-red-700">{{ mailSamenvatting.geweigerd }}</span> geweigerd</span>
+          <span v-if="mailSamenvatting.verstuurd"><span class="font-semibold text-gray-700">{{ mailSamenvatting.verstuurd }}</span> onderweg</span>
+        </div>
         <!-- List -->
         <div v-if="customersLoading" class="rounded-xl border border-gray-100 bg-white p-12 text-center">
           <div class="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-gray-200 border-t-gray-500" />
@@ -579,6 +635,7 @@ function relativeDays(iso: string | null | undefined): string {
                 <th class="px-3 py-2.5">Modules</th>
                 <th class="px-3 py-2.5">Aangemaakt</th>
                 <th class="px-3 py-2.5">Laatste batch</th>
+                <th class="px-3 py-2.5">Mail</th>
                 <th class="px-3 py-2.5 w-32 text-right">Actie</th>
               </tr>
             </thead>
@@ -619,7 +676,13 @@ function relativeDays(iso: string | null | undefined): string {
                     <AppIcon name="send" :size="10" />
                     Klaargezet
                   </span>
-                  <span v-else class="text-[11px] text-gray-400">Nooit gemaild</span>
+                  <span v-else class="text-[11px] text-gray-400">Uitgenodigd</span>
+                </td>
+                <td class="px-3 py-2.5">
+                  <span v-if="mailInfo(c.email)" class="inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium" :class="mailInfo(c.email)!.cls" :title="mailInfo(c.email)!.title">
+                    {{ mailInfo(c.email)!.label }}
+                  </span>
+                  <span v-else class="text-[11px] text-gray-300">—</span>
                 </td>
                 <td class="px-3 py-2.5 text-right">
                   <div v-if="sendResult && sendResult.id === c.id" class="inline-flex items-center gap-1 text-[11px] font-medium"
