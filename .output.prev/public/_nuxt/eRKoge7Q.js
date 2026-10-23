@@ -1,0 +1,1 @@
+import{ao as r,S as s,aq as l,U as u}from"./BTGjCIGW.js";const n=r(async()=>{let e,a;const{userRole:t,resolveRole:o}=s();if(t.value||([e,a]=l(()=>o()),await e,a()),t.value!=="platform_admin")return u("/")});export{n as default};
