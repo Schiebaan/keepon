@@ -1,1 +1,0 @@
-function e(n){return new Intl.DateTimeFormat("nl-NL",{day:"numeric",month:"long",year:"numeric"}).format(new Date(n))}function r(n){return n&&typeof n.ticket_number=="number"&&n.ticket_number>0?String(n.ticket_number):null}export{r as a,e as f};
