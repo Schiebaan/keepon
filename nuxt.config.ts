@@ -12,6 +12,12 @@ export default defineNuxtConfig({
   ],
 
   supabase: {
+    // Bewust leeg. @nuxtjs/supabase 2.1 leest SUPABASE_SERVICE_ROLE_KEY bij het
+    // bouwen in en zet hem dan als tekst in .output/server/chunks/nitro/nitro.mjs.
+    // Wij gebruiken de module-helpers met de geheime sleutel niet; de app leest
+    // de sleutel tijdens het draaien uit de omgeving (server/utils/supabase.ts).
+    secretKey: '',
+    serviceKey: '',
     redirectOptions: {
       login: '/login',
       callback: '/auth/callback',
