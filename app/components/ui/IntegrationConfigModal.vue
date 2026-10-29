@@ -82,8 +82,8 @@ const integrationInfo: Record<string, { description: string; helpUrl: string; fe
     features: ['Factuurkoppeling', 'BTW-aangifte', 'Financiële rapportages'],
   },
   'Gripp.com': {
-    description: 'CRM en projectmanagement koppeling. Synchroniseer klantgegevens en projecten.',
-    helpUrl: 'https://gripp.com/api',
+    description: 'CRM en projectmanagement koppeling. Synchroniseer klantgegevens en projecten. De API-key maak je aan in Gripp: klik linksonder op het tandwiel → Instellingen → tabblad API-keys → Toevoegen, geef de key een naam en kopieer hem. Hiervoor heb je in Gripp beheerdersrechten en een API request pack nodig. Het subdomein is het deel vóór “.gripp.com” in het webadres van je Gripp-omgeving.',
+    helpUrl: '',
     features: ['Klantsynchronisatie', 'Projectkoppeling', 'Urenregistratie', 'Offertebeheer'],
   },
 }
@@ -400,7 +400,7 @@ function handleClose() {
                   </div>
                 </div>
 
-                <div v-if="info" class="mt-3">
+                <div v-if="info && info.helpUrl" class="mt-3">
                   <a
                     :href="info.helpUrl"
                     target="_blank"
